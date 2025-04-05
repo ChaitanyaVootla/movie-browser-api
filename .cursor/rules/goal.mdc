@@ -1,0 +1,117 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Goal of movie-browser-api
+
+The goal of this open source API project is to enrich the TMDB API with additional data related to ratings, reviews and watch links
+This project will handle both movies and tv series
+
+We will utilize wikidata heavily to get external links to sites like rottentomatoes, netflix, prime video, apple tv etc...
+
+For ratings we will rely on scraping imdb, rottentomatoes primarily
+
+## Google search results for watch links
+
+We will also scrape google search result for a moive/series using a AWS lambda function running puppeteer (accessed via a REST API)
+The result will be specific to the region as google search is customised to the region from where the page is accessed from, we will try to spoof out location to get results for muliple countries
+
+Another way to get watch links is to write custom crawlers for each streaming site so we can scrape watch links and availability by region/country
+
+## Exposed endpoints
+
+The final exposed endpoints would be
+- GET /api/v1/movie/light/{id}
+- GET /api/v1/movie/{id}
+- GET /api/v1/tv/light/{id}
+- GET /api/v1/tv/{id}
+- GET /api/v1/movie/multiple?ids={ids} // always a light call
+- GET /api/v1/tv/multiple?ids={ids} // always a light call
+
+light calls will return a small subset of the data, excluding data like credits, images, recommendations, keywords etc...
+
+## Scraping reviews and raings
+
+We will primarily focus on ratings/reviews from IMDB and rottentomatoes, but we will make the system modular so we can add more sources
+The additional sources can from either wikidata, or from when we scrape the google search result
+
+once we get the external link for ex its IMDB ID, we will scrape the IMDB page to get the rating/review data
+
+## Technical Action plan
+
+We will start by scraping all movie, series data from TMDB and holding it in a database, possibly dynamo db(this can change as we plan)
+Then we will keep this data up to date by hitting the TMDB changes API everyday so we know which movie/series to update and selectively updating only them daily
+This will keep our baseline data from TMDB up to date
+
+TMDB results will have IMDB links to begin with, this and the TMDB ID will help us map the results with what we get from wikidata, wikidata will have a lot more info on external links, like rottentomatoes ID etc...
+We will get a dump of all wikidata information on movies and series and we will inject the external IDs into our database by mapping the existing TMDB data with it using the TMDB id and IMDB id we already have
+
+example query from wikidata:
+
+```
+SELECT DISTINCT ?movie ?movieLabel (SAMPLE(?imdbId) AS ?imdbId) (SAMPLE(?tmdbId) AS ?tmdbId) 
+            (SAMPLE(?rottentomatoesId) AS ?rottentomatoesId) (SAMPLE(?metacriticId) AS ?metacriticId) 
+            (SAMPLE(?letterboxdId) AS ?letterboxdId) (SAMPLE(?netflixId) AS ?netflixId) 
+            (SAMPLE(?primeVideoId) AS ?primeVideoId) (SAMPLE(?appleId) AS ?appleId) 
+            (SAMPLE(?hotstarId) AS ?hotstarId) 
+        WHERE {
+            ?movie wdt:P31 wd:Q11424.  # Instance of "film"
+
+            # Require at least one of IMDb ID or TMDb ID
+            ?movie wdt:P345|wdt:P4947 ?id.
+            
+            OPTIONAL { ?movie wdt:P345 ?imdbId. }             # IMDb ID (optional)
+            OPTIONAL { ?movie wdt:P4947 ?tmdbId. }            # TMDb ID (optional)
+            OPTIONAL { ?movie wdt:P1258 ?rottentomatoesId. }  # Rotten Tomatoes ID (optional)
+            OPTIONAL { ?movie wdt:P1712 ?metacriticId. }      # Metacritic ID (optional)
+            OPTIONAL { ?movie wdt:P6127 ?letterboxdId. }      # Letterboxd ID (optional)
+            OPTIONAL { ?movie wdt:P1874 ?netflixId. }         # Netflix ID (optional)
+            OPTIONAL { ?movie wdt:P8055 ?primeVideoId. }      # Prime Video ID (optional)
+            OPTIONAL { ?movie wdt:P9586 ?appleId. }           # Apple ID (optional)
+            OPTIONAL { ?movie wdt:P11049 ?hotstarId. }           # Jio Hotstar ID (optional)
+            
+            SERVICE wikibase:label { bd:serviceParam wikibase:language "[AUTO_LANGUAGE]". }
+        }
+        GROUP BY ?movie ?movieLabel
+```
+
+we can map the response into a format like this
+
+```
+{
+    "movie": "http://www.wikidata.org/entity/Q172241",
+    "movieLabel": "Q172241",
+    "tmdbId": "278",
+    "imdbId": "tt0111161",
+    "externalLinks": {
+      "imdb": "tt0111161",
+      "tmdb": "278",
+      "rottenTomatoes": "m/shawshank_redemption",
+      "metacritic": "movie/the-shawshank-redemption",
+      "letterboxd": "the-shawshank-redemption",
+      "netflix": "70005379",
+      "primeVideo": null,
+      "apple": "umc.cmc.459n4f98t82t8ommdoa7ebnny",
+      "hotstar": null
+    }
+  }
+```
+
+This will provide us with the external IDs which we will inject into our database, then a new process will pick it up from there and scrape these external links(the modular scrpaer system i was talking about)
+For example we will scrape the IMDB page to get the rating, and review count
+We will inject it into the database in a fashion that is independent of other scrapers but all will have a similar structure so its easy to work with when consumed
+
+## Hosting the data
+
+We can store this in dynamo db (or a better suited one) and make the data available for free for anyone accessing it without any api key/ authentication
+This needs to be distributed fast and at scale so we will utilise a cdn for ex cloudfront, which will expose the API instead of a traditional API Server
+
+## Keeping data up to date
+
+We will periodically run the updates and rely on TMDB to update the base data daily and also independently get the relavant info for all data from wikidata so we are kept up to date on the external links
+
+## Costs
+
+Since this is a open source free to access API, we will keep the costs as low as possible and utilize cloud services with a generous free tier as much as possible
+
