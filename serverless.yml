@@ -1,0 +1,123 @@
+service: movie-browser-api-scrapers
+
+frameworkVersion: '4'  # Updated to match installed version
+org: themoviebrowser
+provider:
+  name: aws
+  runtime: nodejs18.x # Default runtime for other functions
+  region: ap-south-2 # Specify your desired AWS region
+  # Optional: Define environment variables for the Lambda function
+  environment:
+    LOG_LEVEL: info
+    NODE_ENV: ${opt:stage, 'dev'}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+            - cloudformation:*
+            - apigateway:*
+            - lambda:*
+            - iam:PassRole
+            - iam:CreateRole
+            - iam:DeleteRole
+            - iam:GetRole
+          Resource: '*'
+
+# Define packaging configuration
+package:
+  individually: true # Package functions separately
+  patterns:
+    - '!**' # Exclude everything by default
+    - 'dist/**'
+    - 'node_modules/**'
+    - '!node_modules/**/aws-sdk/**'
+    - '!node_modules/puppeteer/.local-chromium/**'
+    - 'node_modules/chrome-aws-lambda/**'
+    - 'node_modules/puppeteer-core/**'
+
+functions:
+  scrapeRatings:
+    handler: dist/services/scraping/ratingsScraper.handler # Path to the compiled handler function
+    memorySize: 1024 # Adjust memory as needed (start small)
+    timeout: 60 # Adjust timeout (in seconds)
+    events:
+      - http:
+          path: scrape
+          method: post
+          cors: true
+          request:
+            schemas:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    imdbId:
+                      type: string
+                      description: IMDb ID (e.g., tt0111161)
+                    rottenTomatoesUrl:
+                      type: string
+                      description: Full Rotten Tomatoes URL
+                  anyOf:
+                    - required: ["imdbId"]
+                    - required: ["rottenTomatoesUrl"]
+                    - required: ["imdbId", "rottenTomatoesUrl"]
+
+  scrapeGoogleKnowledgePanel:
+    handler: dist/services/scraping/googleKnowledgePanelScraper.handler
+    runtime: nodejs14.x  # Specific runtime for Google scraper
+    memorySize: 1000  # Increased memory for Puppeteer
+    timeout: 30     # Increased timeout for scraping
+    layers:
+      - arn:aws:lambda:ap-south-2:891564319516:layer:LambdaInsightsExtension:10
+    environment:
+      CHROME_AWS_LAMBDA_CHROME_EXECUTABLE_PATH: /opt/chromium/chromium
+    events:
+      - http:
+          path: scrape/google
+          method: post
+          cors: true
+          request:
+            schemas:
+              application/json:
+                schema:
+                  type: object
+                  required:
+                    - searchString
+                    - region
+                  properties:
+                    searchString:
+                      type: string
+                      description: Movie title to search for
+                    region:
+                      type: string
+                      description: Country code for regional results (e.g., "us", "uk", "in")
+
+# Optional: Add plugins (e.g., for TypeScript compilation)
+# plugins:
+#   - serverless-plugin-typescript # If you manage compilation via serverless
+#   - serverless-offline # For local API Gateway simulation
+
+# Optional: Define custom resources (e.g., SQS queues, DynamoDB tables)
+# resources:
+#   Resources:
+#     ScrapingQueue:
+#       Type: AWS::SQS::Queue
+#       Properties:
+#         QueueName: MovieScrapingQueue-${sls:stage}
+#         VisibilityTimeout: 60
+#         MessageRetentionPeriod: 1209600  # 14 days
+#         RedrivePolicy:
+#           deadLetterTargetArn: !GetAtt ScrapingDeadLetterQueue.Arn
+#           maxReceiveCount: 3
+
+#     ScrapingDeadLetterQueue:
+#       Type: AWS::SQS::Queue
+#       Properties:
+#         QueueName: MovieScrapingDLQ-${sls:stage}
+#         MessageRetentionPeriod: 1209600  # 14 days 

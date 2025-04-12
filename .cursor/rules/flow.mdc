@@ -1,0 +1,20 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# movie-browser-api technical documentation
+
+This project uses knex to deal with postgresql queries, and all of the db logic is limited to `src/repositories`
+repository for each table is available to communicate with the db, do not write raw queries outside this folder.
+
+All database migrations and table creations are defined in the `/migrations` folder, refer to all files in it to know the current database table setup
+
+# Data collection flow
+
+- Base data is collected from TMDB
+- external_ids from TMDB is stored
+- wikidata info is scraped periodically using the query in [wikidata.mdc](mdc:.cursor/rules/wikidata.mdc) and external_ids are populated from this source too
+- periodically a service will gather all the external_ids in the db which dont have any rating info in the db and scrape for ratings info using [ratingsScraper.ts](mdc:src/services/scraping/ratingsScraper.ts), this will fetch IMDB and rottentomatoes data
+- Another source is google search knowledge panel, we will get ratings and watch links info from this using [googleKnowledgePanelScraper.ts](mdc:src/services/scraping/googleKnowledgePanelScraper.ts) we will get exteral_ids for ratings and watch_links info and populate both to the db
+- We will also create a new scraper to scrape the home page for every watch link to get info like the audio languages, the video options like HD, dolby vision etc and store them, this is not planned yet, will come in after the current steps

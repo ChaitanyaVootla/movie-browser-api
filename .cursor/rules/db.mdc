@@ -1,0 +1,270 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Database Schema Design
+
+## Core Tables
+
+### movies
+```sql
+CREATE TABLE movies (
+    id INTEGER PRIMARY KEY,  -- TMDB ID
+    tmdb_id INTEGER UNIQUE NOT NULL,
+    imdb_id VARCHAR(20),
+    title VARCHAR(255) NOT NULL,
+    original_title VARCHAR(255),
+    overview TEXT,
+    tagline TEXT,
+    release_date DATE,
+    runtime INTEGER,
+    budget BIGINT,
+    revenue BIGINT,
+    popularity DECIMAL(10,4),
+    vote_average DECIMAL(3,1),
+    vote_count INTEGER,
+    adult BOOLEAN DEFAULT false,
+    status VARCHAR(50),
+    homepage VARCHAR(255),
+    poster_path VARCHAR(255),
+    backdrop_path VARCHAR(255),
+    original_language VARCHAR(10),
+    next_update_time TIMESTAMP WITH TIME ZONE,  -- When to next update this record
+    update_frequency INTERVAL,                  -- How often to update this record
+    last_full_update TIMESTAMP WITH TIME ZONE,  -- When all data was last updated
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### tv_series
+```sql
+CREATE TABLE tv_series (
+    id INTEGER PRIMARY KEY,  -- TMDB ID
+    tmdb_id INTEGER UNIQUE NOT NULL,
+    imdb_id VARCHAR(20),
+    name VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255),
+    overview TEXT,
+    tagline TEXT,
+    first_air_date DATE,
+    last_air_date DATE,
+    episode_run_time INTEGER[],
+    number_of_seasons INTEGER,
+    number_of_episodes INTEGER,
+    popularity DECIMAL(10,4),
+    vote_average DECIMAL(3,1),
+    vote_count INTEGER,
+    status VARCHAR(50),
+    homepage VARCHAR(255),
+    poster_path VARCHAR(255),
+    backdrop_path VARCHAR(255),
+    original_language VARCHAR(10),
+    next_update_time TIMESTAMP WITH TIME ZONE,  -- When to next update this record
+    update_frequency INTERVAL,                  -- How often to update this record
+    last_full_update TIMESTAMP WITH TIME ZONE,  -- When all data was last updated
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### genres
+```sql
+CREATE TABLE genres (
+    id INTEGER PRIMARY KEY,  -- TMDB ID
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+```
+
+### movie_genres
+```sql
+CREATE TABLE movie_genres (
+    movie_id INTEGER REFERENCES movies(id),
+    genre_id INTEGER REFERENCES genres(id),
+    PRIMARY KEY (movie_id, genre_id)
+);
+```
+
+### tv_genres
+```sql
+CREATE TABLE tv_genres (
+    tv_id INTEGER REFERENCES tv_series(id),
+    genre_id INTEGER REFERENCES genres(id),
+    PRIMARY KEY (tv_id, genre_id)
+);
+```
+
+### production_companies
+```sql
+CREATE TABLE production_companies (
+    id INTEGER PRIMARY KEY,  -- TMDB ID
+    name VARCHAR(255) NOT NULL,
+    logo_path VARCHAR(255),
+    origin_country VARCHAR(2)
+);
+```
+
+### movie_production_companies
+```sql
+CREATE TABLE movie_production_companies (
+    movie_id INTEGER REFERENCES movies(id),
+    company_id INTEGER REFERENCES production_companies(id),
+    PRIMARY KEY (movie_id, company_id)
+);
+```
+
+### tv_production_companies
+```sql
+CREATE TABLE tv_production_companies (
+    tv_id INTEGER REFERENCES tv_series(id),
+    company_id INTEGER REFERENCES production_companies(id),
+    PRIMARY KEY (tv_id, company_id)
+);
+```
+
+## Enrichment Tables
+
+### external_ids
+```sql
+CREATE TABLE external_ids (
+    id SERIAL PRIMARY KEY,
+    content_type VARCHAR(10) NOT NULL,  -- 'movie' or 'tv'
+    content_id INTEGER NOT NULL,        -- References movies.id or tv_series.id
+    source VARCHAR(50) NOT NULL,        -- e.g., 'rottentomatoes', 'netflix', 'prime'
+    external_id VARCHAR(100) NOT NULL,
+    url VARCHAR(255),
+    confidence_score DECIMAL(3,2),      -- How confident we are in this mapping
+    last_verified TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(content_type, content_id, source, external_id)
+);
+```
+
+### ratings
+```sql
+CREATE TABLE ratings (
+    id SERIAL PRIMARY KEY,
+    content_type VARCHAR(10) NOT NULL,  -- 'movie' or 'tv'
+    content_id INTEGER NOT NULL,        -- References movies.id or tv_series.id
+    source VARCHAR(50) NOT NULL,        -- e.g., 'imdb', 'rottentomatoes'
+    rating DECIMAL(3,1),
+    rating_count INTEGER,
+    review_count INTEGER,
+    consensus TEXT,                     -- One-line consensus/review
+    last_updated TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(content_type, content_id, source)
+);
+```
+
+### watch_providers
+```sql
+CREATE TABLE watch_providers (
+    id INTEGER PRIMARY KEY,  -- TMDB ID
+    name VARCHAR(100) NOT NULL,
+    logo_path VARCHAR(255),
+    priority INTEGER         -- For sorting/display order
+);
+```
+
+### watch_links
+```sql
+CREATE TABLE watch_links (
+    id SERIAL PRIMARY KEY,
+    content_type VARCHAR(10) NOT NULL,  -- 'movie' or 'tv'
+    content_id INTEGER NOT NULL,        -- References movies.id or tv_series.id
+    provider_id INTEGER REFERENCES watch_providers(id),
+    country_code VARCHAR(2) NOT NULL,
+    link_type VARCHAR(20) NOT NULL,     -- 'rent', 'buy', 'stream', 'free'
+    url VARCHAR(255),
+    price DECIMAL(10,2),                -- For rent/buy options
+    currency VARCHAR(3),
+    last_verified TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(content_type, content_id, provider_id, country_code, link_type)
+);
+```
+
+### cast_members
+```sql
+CREATE TABLE cast_members (
+    id INTEGER PRIMARY KEY,  -- TMDB ID
+    name VARCHAR(255) NOT NULL,
+    profile_path VARCHAR(255),
+    gender INTEGER,
+    popularity DECIMAL(10,4)
+);
+```
+
+### movie_cast
+```sql
+CREATE TABLE movie_cast (
+    movie_id INTEGER REFERENCES movies(id),
+    cast_id INTEGER REFERENCES cast_members(id),
+    character_name VARCHAR(255),
+    order_index INTEGER,
+    department VARCHAR(50),
+    job VARCHAR(100),
+    PRIMARY KEY (movie_id, cast_id)
+);
+```
+
+### tv_cast
+```sql
+CREATE TABLE tv_cast (
+    tv_id INTEGER REFERENCES tv_series(id),
+    cast_id INTEGER REFERENCES cast_members(id),
+    character_name VARCHAR(255),
+    order_index INTEGER,
+    department VARCHAR(50),
+    job VARCHAR(100),
+    PRIMARY KEY (tv_id, cast_id)
+);
+```
+
+## Indexes
+
+```sql
+-- Movies
+CREATE INDEX idx_movies_tmdb_id ON movies(tmdb_id);
+CREATE INDEX idx_movies_imdb_id ON movies(imdb_id);
+CREATE INDEX idx_movies_release_date ON movies(release_date);
+CREATE INDEX idx_movies_popularity ON movies(popularity);
+CREATE INDEX idx_movies_next_update ON movies(next_update_time) WHERE next_update_time IS NOT NULL;
+
+-- TV Series
+CREATE INDEX idx_tv_series_tmdb_id ON tv_series(tmdb_id);
+CREATE INDEX idx_tv_series_imdb_id ON tv_series(imdb_id);
+CREATE INDEX idx_tv_series_first_air_date ON tv_series(first_air_date);
+CREATE INDEX idx_tv_series_popularity ON tv_series(popularity);
+CREATE INDEX idx_tv_series_next_update ON tv_series(next_update_time) WHERE next_update_time IS NOT NULL;
+
+-- External IDs
+CREATE INDEX idx_external_ids_content ON external_ids(content_type, content_id);
+CREATE INDEX idx_external_ids_source ON external_ids(source);
+
+-- Ratings
+CREATE INDEX idx_ratings_content ON ratings(content_type, content_id);
+CREATE INDEX idx_ratings_source ON ratings(source);
+
+-- Watch Links
+CREATE INDEX idx_watch_links_content ON watch_links(content_type, content_id);
+CREATE INDEX idx_watch_links_country ON watch_links(country_code);
+CREATE INDEX idx_watch_links_provider ON watch_links(provider_id);
+```
+
+## Notes
+
+1. All tables include `created_at` and `updated_at` timestamps for tracking data freshness
+2. The schema supports both movies and TV series with similar structures
+3. External IDs table allows for multiple sources and confidence scoring
+4. Watch links support different types (rent/buy/stream) and regional variations
+5. Cast members are normalized to avoid duplication
+6. Indexes are created for commonly queried fields
+7. The schema is designed to be easily extensible for additional enrichment data
+8. Update scheduling is managed through next_update_time in the core tables
+9. When a movie/TV show is updated, all related data (external IDs, ratings, watch links) is refreshed 

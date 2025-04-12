@@ -1,119 +1,142 @@
 ---
 description: 
 globs: 
-alwaysApply: false
+alwaysApply: true
 ---
 # Implementation Plan
 
-## Phase 1 - Core Infrastructure
+## Phase 1: Local Development Setup (1-2 weeks)
 
-### 1.1 EC2 Setup
-- Launch t3.micro instance (free tier eligible)
-- Configure security groups for API access
-- Set up TypeScript + Express environment
-- Configure PM2 for process management
-- Set up logging with CloudWatch
+### Infrastructure Setup
+1. Set up local PostgreSQL database
+   - Install PostgreSQL
+   - Create database and user
+   - Apply initial schema from db.md
+   - Set up basic indexes
 
-### 1.2 DynamoDB Configuration
-- Design table schemas for:
-  - Movies (base TMDB data)
-  - TV Shows (base TMDB data)
-  - External Links (from Wikidata)
-  - Ratings & Reviews
-  - Watch Links
-- Set up GSIs (Global Secondary Indexes) for efficient querying
-- Configure auto-scaling
-- Set up backup strategy
+2. Set up Node.js development environment
+   - Initialize Node.js project
+   - Set up Express server
+   - Configure TypeScript
+   - Set up environment variables
+   - Create basic API structure
 
-### 1.3 API Implementation
-- Set up Express with TypeScript
-- Implement API versioning middleware
-- Add rate limiting
-- Set up request validation
-- Implement error handling
-- Add health check endpoints
-- Set up API documentation with Swagger
+3. Create basic API endpoints
+   - GET /api/v1/movie/{id}
+   - GET /api/v1/movie/multiple?ids={ids}
+   - Basic error handling and response formatting
 
-### 1.4 CloudFront Setup
-- Create CloudFront distribution
-- Configure SSL certificate
-- Set up caching rules
-- Configure origin failover
-- Set up WAF rules for basic protection
+### Initial Data Population
+1. Create TMDB data fetcher
+   - Set up TMDB API client
+   - Fetch movies with vote_count > 1000
+   - Store basic movie data in PostgreSQL
+   - Implement basic error handling and rate limiting
 
-## Phase 2 - Data Population
+2. Create data models and repositories
+   - Movie model
+   - External IDs model
+   - Ratings model
+   - Watch links model
 
-### 2.1 TMDB Integration
-- Set up TMDB API client
-- Implement movie data fetcher
-- Implement TV show data fetcher
-- Create initial data load script
-- Set up daily update job
-- Implement change detection
+## Phase 2: Basic Scraping Infrastructure (2-3 weeks)
 
-### 2.2 Wikidata Integration
-- Set up SPARQL query client
-- Implement Wikidata data fetcher
-- Create mapping logic for external IDs
-- Set up periodic update job
-- Implement data validation
+### AWS Lambda Setup
+1. Create base Lambda function template
+   - Set up Node.js runtime
+   - Configure Puppeteer
+   - Set up error handling and logging
+   - Implement basic retry mechanism
 
-### 2.3 Data Pipeline
-- Create ETL pipeline for TMDB data
-- Create ETL pipeline for Wikidata data
-- Implement data transformation logic
-- Set up error handling and retries
-- Create data quality checks
+2. Create individual scraping Lambdas
+   - Google Search scraper
+     - Focus on movie titles and external IDs
+     - Implement region-specific search (gl parameter)
+   - IMDb scraper
+     - Extract ratings and review counts
+     - Handle rate limiting and IP blocks
+   - Rotten Tomatoes scraper
+     - Extract ratings and consensus
+     - Handle dynamic content loading
 
-## Phase 3 - Enrichment
+### Data Integration
+1. Create data enrichment pipeline
+   - Implement queue system for scraping tasks
+   - Create data consolidation logic
+   - Set up basic validation rules
+   - Implement confidence scoring for external IDs
 
-### 3.1 IMDB Scraping
-- Set up Puppeteer for scraping
-- Implement IMDB page parser
-- Create rating extraction logic
-- Set up review scraping
-- Implement rate limiting and retries
+2. Create update scheduler
+   - Implement basic next_update_time logic
+   - Create update frequency calculator
+   - Set up manual update trigger
 
-### 3.2 Rotten Tomatoes Integration
-- Implement Rotten Tomatoes scraper
-- Create rating extraction logic
-- Set up review scraping
-- Implement data validation
-- Create update job
+## Phase 3: Testing and Refinement (1-2 weeks)
 
-### 3.3 Watch Links
-- Set up Google search scraper
-- Implement streaming site crawlers
-- Create region-specific logic
-- Set up proxy rotation
-- Implement availability checking
+### Testing Infrastructure
+1. Set up test environment
+   - Create test database
+   - Set up test data
+   - Implement basic integration tests
 
-### 3.4 Enhanced Caching
-- Implement multi-level caching
-- Set up cache preloading
-- Create cache analytics
-- Implement cache optimization
-- Set up cache monitoring
+2. Create monitoring and logging
+   - Set up basic metrics collection
+   - Implement error tracking
+   - Create basic dashboard for monitoring
 
-## Phase 4 - Optimization
+### Performance Optimization
+1. Optimize database queries
+   - Review and optimize indexes
+   - Implement query caching
+   - Optimize batch operations
 
-### 4.1 Performance
-- Profile API endpoints
-- Optimize DynamoDB queries
-- Implement connection pooling
-- Add request compression
-- Optimize caching strategy
+2. Optimize scraping
+   - Implement parallel scraping
+   - Optimize Puppeteer configurations
+   - Implement smart retry strategies
 
-### 4.2 Cost Optimization
-- Analyze AWS costs
-- Implement cost-saving measures
-- Set up cost alerts
-- Optimize resource usage
-- Create cost reporting
+## Phase 4: Production Preparation (2-3 weeks)
 
-### 4.4 Documentation
-- Create API documentation
-- Write deployment guides
-- Document data schemas
-- Create maintenance procedures
-- Write troubleshooting guides
+### AWS Migration
+1. Set up EC2 instance
+   - Configure PostgreSQL
+   - Set up Node.js environment
+   - Configure security groups
+
+2. Set up Cloudflare
+   - Configure CDN
+   - Set up caching rules
+   - Implement cache purging
+
+### Production Features
+1. Implement advanced features
+   - Rate limiting
+   - API key management
+   - Advanced error handling
+   - Request logging
+
+2. Set up monitoring and alerts
+   - Configure CloudWatch
+   - Set up alerting
+   - Create operational dashboards
+
+## Future Phases
+
+### Phase 5: Scale and Enhance
+- Expand to TV series
+- Add more data sources
+- Implement advanced caching
+- Add more regional support
+
+### Phase 6: Advanced Features
+- Implement user accounts
+- Add personalized recommendations
+- Create advanced analytics
+- Add machine learning features
+
+## Notes
+- Each phase should include thorough testing
+- Documentation should be updated with each phase
+- Security reviews should be conducted before production deployment
+- Performance metrics should be collected and analyzed throughout
+- Regular backups should be implemented from the start 

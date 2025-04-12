@@ -1,0 +1,220 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Structure and Schema Documentation
+
+## Directory Structure
+
+```
+movie-browser-api/
+src/config/           # Configuration files and environment setup
+src/controllers/      # Request handlers and route logic
+src/models/          # Database models and type definitions
+src/repositories/    # Database access layer with Knex
+src/routes/         # API route definitions
+src/schemas/        # Zod schemas for validation
+src/services/       # Business logic and external services
+src/services/enrichment/ # Data enrichment services
+src/services/scraping/   # Web scraping implementations
+src/scripts/        # Utility and maintenance scripts
+src/types/         # TypeScript type definitions
+src/utils/         # Shared utility functions
+migrations/        # Knex database migrations
+data/             # Data files and temporary storage
+```
+
+## Core Components
+
+### 1. Database Layer (Repositories)
+
+The project uses Knex.js for database operations with a repository pattern:
+
+```typescript
+// Base Repository Pattern (src/repositories/base.repository.ts)
+export abstract class BaseRepository<T> {
+  protected abstract tableName: string;
+  protected abstract schema: z.ZodSchema;
+  
+  // Common CRUD operations
+  async findById(id: number): Promise<T | null>;
+  async create(data: Omit<T, 'id'>): Promise<T>;
+  async update(id: number, data: Partial<T>): Promise<T>;
+  // ... more operations
+}
+
+// Specific Repositories
+export class MovieRepository extends BaseRepository<Movie> {
+  protected tableName = 'movies';
+  protected schema = MovieSchema;
+  
+  // Movie-specific operations
+  async findByTmdbId(tmdbId: number): Promise<Movie | null>;
+  async updateWithRelations(id: number, data: MovieUpdateData): Promise<Movie>;
+  // ... more operations
+}
+```
+
+### 2. Schema Validation
+
+Located in `src/schemas/`, using Zod for runtime validation:
+
+```typescript
+// Base Movie Schema
+export const MovieSchema = z.object({
+  id: z.number(),
+  tmdb_id: z.number(),
+  title: z.string().max(255),
+  // ... other fields
+  next_update_time: z.string().datetime().nullable(),
+  update_frequency: z.string().nullable(),
+  last_full_update: z.string().datetime().nullable()
+});
+
+// Derived Schemas
+export const CreateMovieSchema = MovieSchema.omit({ 
+  id: true, 
+  created_at: true 
+});
+export const UpdateMovieSchema = CreateMovieSchema.partial();
+```
+
+### 3. Services Layer
+
+The services layer handles business logic and external integrations:
+
+```typescript
+src/services/
+├── TMDBService.ts           # TMDB API integration
+├── enrichment/
+│   ├── RatingsEnricher.ts   # Ratings data enrichment
+│   └── WatchLinksEnricher.ts # Watch links enrichment
+└── scraping/
+    ├── GoogleScraper.ts     # Google search scraping
+    ├── IMDBScraper.ts       # IMDB data scraping
+    └── RottenTomatoesScraper.ts # RT data scraping
+```
+
+### 4. Type System
+
+The type system is organized in layers:
+
+```typescript
+src/types/
+├── tmdb.ts        # TMDB API types
+├── common.ts      # Shared type definitions
+├── enrichment.ts  # Enrichment service types
+└── scraping.ts    # Scraper-specific types
+```
+
+### 5. Data Enrichment Pipeline
+
+The enrichment process follows a modular pattern:
+
+```typescript
+// Enrichment Service Pattern
+export abstract class BaseEnricher<T> {
+  abstract enrich(data: T): Promise<EnrichedData<T>>;
+  abstract validate(data: EnrichedData<T>): boolean;
+  abstract store(data: EnrichedData<T>): Promise<void>;
+}
+
+// Example Implementation
+export class RatingsEnricher extends BaseEnricher<Movie> {
+  async enrich(movie: Movie) {
+    const imdbRating = await this.scrapeIMDB(movie.imdb_id);
+    const rtRating = await this.scrapeRottenTomatoes(movie.rt_id);
+    return { ...movie, ratings: [imdbRating, rtRating] };
+  }
+  // ... implementation
+}
+```
+
+## Best Practices
+
+1. Repository Pattern:
+   - Each table has its own repository
+   - Repositories extend BaseRepository
+   - Strong typing with Zod schemas
+   - Transaction support for related operations
+
+2. Service Layer:
+   - Clear separation of concerns
+   - Modular enrichment services
+   - Configurable scraping strategies
+   - Error handling and retry logic
+
+3. Type Safety:
+   - Zod schemas generate TypeScript types
+   - Runtime validation on all boundaries
+   - Strict null checking
+   - Comprehensive error types
+
+4. Data Enrichment:
+   - Modular enrichment pipeline
+   - Configurable update frequencies
+   - Validation at each step
+   - Failure recovery mechanisms
+
+5. Code Organization:
+   - Feature-based directory structure
+   - Clear separation of concerns
+   - Consistent naming conventions
+   - Comprehensive documentation
+
+## Common Patterns
+
+1. Error Handling:
+```typescript
+export class AppError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public status: number = 500
+  ) {
+    super(message);
+  }
+}
+
+// Usage in repositories/services
+try {
+  await operation();
+} catch (error) {
+  if (error instanceof AppError) throw error;
+  throw new AppError('OPERATION_FAILED', 'Operation failed', 500);
+}
+```
+
+2. Validation:
+```typescript
+// Request validation
+export const validateRequest = <T>(schema: z.ZodSchema<T>) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      req.body = schema.parse(req.body);
+      next();
+    } catch (error) {
+      next(new AppError('VALIDATION_ERROR', error.message, 400));
+    }
+  };
+};
+```
+
+3. Database Transactions:
+```typescript
+// Transaction wrapper in repositories
+async withTransaction<T>(
+  callback: (trx: Knex.Transaction) => Promise<T>
+): Promise<T> {
+  const trx = await this.knex.transaction();
+  try {
+    const result = await callback(trx);
+    await trx.commit();
+    return result;
+  } catch (error) {
+    await trx.rollback();
+    throw error;
+  }
+}
+```

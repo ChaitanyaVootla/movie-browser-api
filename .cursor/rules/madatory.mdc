@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Always follow these rules, there are no exceptions
+
+- Always run npm run format to fix formatting when facing lint issues or when asked to fix lint issues
