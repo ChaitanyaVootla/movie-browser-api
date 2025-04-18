@@ -1,5 +1,5 @@
-import db from '../config/database';
-import { KnexRepository } from './base.repository';
+import db from '@config/database';
+import { KnexRepository } from '@repositories/base.repository';
 import {
     Genre,
     GenreSchema,
@@ -7,7 +7,7 @@ import {
     UpdateGenreSchema,
     GenreQuerySchema,
     GenreQuery,
-} from '../schemas/genre.schema';
+} from '@schemas/genre.schema';
 import { z } from 'zod';
 import { Knex } from 'knex';
 

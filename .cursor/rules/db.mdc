@@ -3,268 +3,195 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Database Schema Design
+# Database Schema Documentation
+
+This document provides a comprehensive reference of the database schema for the Movie Browser API. The schema is defined through a series of migrations and is designed to store movie data along with enriched information such as ratings, watch providers, and external IDs.
 
 ## Core Tables
 
 ### movies
-```sql
-CREATE TABLE movies (
-    id INTEGER PRIMARY KEY,  -- TMDB ID
-    tmdb_id INTEGER UNIQUE NOT NULL,
-    imdb_id VARCHAR(20),
-    title VARCHAR(255) NOT NULL,
-    original_title VARCHAR(255),
-    overview TEXT,
-    tagline TEXT,
-    release_date DATE,
-    runtime INTEGER,
-    budget BIGINT,
-    revenue BIGINT,
-    popularity DECIMAL(10,4),
-    vote_average DECIMAL(3,1),
-    vote_count INTEGER,
-    adult BOOLEAN DEFAULT false,
-    status VARCHAR(50),
-    homepage VARCHAR(255),
-    poster_path VARCHAR(255),
-    backdrop_path VARCHAR(255),
-    original_language VARCHAR(10),
-    next_update_time TIMESTAMP WITH TIME ZONE,  -- When to next update this record
-    update_frequency INTERVAL,                  -- How often to update this record
-    last_full_update TIMESTAMP WITH TIME ZONE,  -- When all data was last updated
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-```
 
-### tv_series
-```sql
-CREATE TABLE tv_series (
-    id INTEGER PRIMARY KEY,  -- TMDB ID
-    tmdb_id INTEGER UNIQUE NOT NULL,
-    imdb_id VARCHAR(20),
-    name VARCHAR(255) NOT NULL,
-    original_name VARCHAR(255),
-    overview TEXT,
-    tagline TEXT,
-    first_air_date DATE,
-    last_air_date DATE,
-    episode_run_time INTEGER[],
-    number_of_seasons INTEGER,
-    number_of_episodes INTEGER,
-    popularity DECIMAL(10,4),
-    vote_average DECIMAL(3,1),
-    vote_count INTEGER,
-    status VARCHAR(50),
-    homepage VARCHAR(255),
-    poster_path VARCHAR(255),
-    backdrop_path VARCHAR(255),
-    original_language VARCHAR(10),
-    next_update_time TIMESTAMP WITH TIME ZONE,  -- When to next update this record
-    update_frequency INTERVAL,                  -- How often to update this record
-    last_full_update TIMESTAMP WITH TIME ZONE,  -- When all data was last updated
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-```
+The primary table for storing movie data, primarily sourced from TMDB.
+
+**Columns:**
+- `id` (integer): Primary key
+- `tmdb_id` (integer): TMDB ID (unique, not null)
+- `imdb_id` (varchar(20)): IMDB ID
+- `title` (varchar(255)): Movie title (not null)
+- `original_title` (varchar(255)): Original title if different from localized title
+- `overview` (text): Movie plot summary
+- `tagline` (text): Movie tagline
+- `release_date` (date): Release date
+- `runtime` (integer): Duration in minutes
+- `budget` (bigint): Production budget
+- `revenue` (bigint): Box office revenue
+- `popularity` (decimal(10,4)): TMDB popularity metric
+- `vote_average` (decimal(3,1)): Average rating on TMDB
+- `vote_count` (integer): Number of votes on TMDB
+- `adult` (boolean): Whether the movie is adult-only (default: false)
+- `status` (varchar(50)): Release status
+- `homepage` (varchar(255)): Official website URL
+- `poster_path` (varchar(255)): Poster image path
+- `backdrop_path` (varchar(255)): Backdrop image path
+- `original_language` (varchar(10)): Original language code
+- `credits` (jsonb): Director and top 10 cast members (added in later migration)
+- `next_update_time` (timestamp): When to next update this record
+- `update_frequency` (string): How often to update this record
+- `last_full_update` (timestamp): When all data was last updated
+- `created_at` (timestamp): Record creation timestamp (default: now)
+- `updated_at` (timestamp): Record update timestamp (default: now)
+
+**Indexes:**
+- idx_movies_tmdb_id
+- idx_movies_imdb_id
+- idx_movies_release_date
+- idx_movies_popularity
+- idx_movies_next_update (conditional on next_update_time not being null)
 
 ### genres
-```sql
-CREATE TABLE genres (
-    id INTEGER PRIMARY KEY,  -- TMDB ID
-    name VARCHAR(100) NOT NULL UNIQUE
-);
-```
+
+Stores genre information.
+
+**Columns:**
+- `id` (integer): Primary key
+- `name` (varchar(100)): Genre name (unique, not null)
 
 ### movie_genres
-```sql
-CREATE TABLE movie_genres (
-    movie_id INTEGER REFERENCES movies(id),
-    genre_id INTEGER REFERENCES genres(id),
-    PRIMARY KEY (movie_id, genre_id)
-);
-```
 
-### tv_genres
-```sql
-CREATE TABLE tv_genres (
-    tv_id INTEGER REFERENCES tv_series(id),
-    genre_id INTEGER REFERENCES genres(id),
-    PRIMARY KEY (tv_id, genre_id)
-);
-```
+Junction table linking movies to genres.
+
+**Columns:**
+- `movie_id` (integer): References movies.id (with CASCADE delete)
+- `genre_id` (integer): References genres.id (with CASCADE delete)
+
+**Primary Key:** (movie_id, genre_id)
 
 ### production_companies
-```sql
-CREATE TABLE production_companies (
-    id INTEGER PRIMARY KEY,  -- TMDB ID
-    name VARCHAR(255) NOT NULL,
-    logo_path VARCHAR(255),
-    origin_country VARCHAR(2)
-);
-```
+
+Stores information about production companies.
+
+**Columns:**
+- `id` (integer): Primary key
+- `name` (varchar(255)): Company name (not null)
+- `logo_path` (varchar(255)): Logo image path
+- `origin_country` (varchar(2)): Two-letter country code
 
 ### movie_production_companies
-```sql
-CREATE TABLE movie_production_companies (
-    movie_id INTEGER REFERENCES movies(id),
-    company_id INTEGER REFERENCES production_companies(id),
-    PRIMARY KEY (movie_id, company_id)
-);
-```
 
-### tv_production_companies
-```sql
-CREATE TABLE tv_production_companies (
-    tv_id INTEGER REFERENCES tv_series(id),
-    company_id INTEGER REFERENCES production_companies(id),
-    PRIMARY KEY (tv_id, company_id)
-);
-```
+Junction table linking movies to production companies.
+
+**Columns:**
+- `movie_id` (integer): References movies.id (with CASCADE delete)
+- `company_id` (integer): References production_companies.id (with CASCADE delete)
+
+**Primary Key:** (movie_id, company_id)
 
 ## Enrichment Tables
 
 ### external_ids
-```sql
-CREATE TABLE external_ids (
-    id SERIAL PRIMARY KEY,
-    content_type VARCHAR(10) NOT NULL,  -- 'movie' or 'tv'
-    content_id INTEGER NOT NULL,        -- References movies.id or tv_series.id
-    source VARCHAR(50) NOT NULL,        -- e.g., 'rottentomatoes', 'netflix', 'prime'
-    external_id VARCHAR(100) NOT NULL,
-    url VARCHAR(255),
-    confidence_score DECIMAL(3,2),      -- How confident we are in this mapping
-    last_verified TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(content_type, content_id, source, external_id)
-);
-```
+
+Stores mappings between internal content and external platforms.
+
+**Columns:**
+- `id` (integer): Primary key
+- `content_type` (varchar(10)): 'movie' or 'tv'
+- `content_id` (integer): References content ID (movies.id or tv_series.id)
+- `source` (varchar(50)): Source platform (e.g., 'imdb', 'rottentomatoes')
+- `external_id` (varchar(255)): ID on the external platform (updated from 100 to 255 chars)
+- `url` (varchar(255)): Full URL to the content on the external platform
+- `confidence_score` (decimal(3,2)): Confidence in the mapping's accuracy
+- `last_verified` (timestamp): When this mapping was last verified
+- `created_at` (timestamp): Record creation timestamp (default: now)
+- `updated_at` (timestamp): Record update timestamp (default: now)
+
+**Unique Constraint:** (content_type, content_id, source, external_id)
+
+**Indexes:**
+- idx_external_ids_content (content_type, content_id)
+- idx_external_ids_source (source)
 
 ### ratings
-```sql
-CREATE TABLE ratings (
-    id SERIAL PRIMARY KEY,
-    content_type VARCHAR(10) NOT NULL,  -- 'movie' or 'tv'
-    content_id INTEGER NOT NULL,        -- References movies.id or tv_series.id
-    source VARCHAR(50) NOT NULL,        -- e.g., 'imdb', 'rottentomatoes'
-    rating DECIMAL(3,1),
-    rating_count INTEGER,
-    review_count INTEGER,
-    consensus TEXT,                     -- One-line consensus/review
-    last_updated TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(content_type, content_id, source)
-);
-```
+
+Stores ratings from various sources.
+
+**Columns:**
+- `id` (integer): Primary key
+- `content_type` (varchar(10)): 'movie' or 'tv'
+- `content_id` (integer): References content ID (movies.id or tv_series.id)
+- `source` (varchar(50)): Rating source (e.g., 'imdb', 'rottentomatoes')
+- `rating_type` (varchar(20)): Type of rating (e.g., 'main', 'critic', 'audience')
+- `rating` (decimal(3,1)): Numerical rating
+- `rating_count` (integer): Number of ratings
+- `consensus` (text): One-line consensus/review
+- `details` (jsonb): Source-specific extras (certified, sentiment, etc.)
+- `last_updated` (timestamp): When this rating was last updated
+- `created_at` (timestamp): Record creation timestamp (default: now)
+- `updated_at` (timestamp): Record update timestamp (default: now)
+
+**Unique Constraint:** (content_type, content_id, source, rating_type)
+
+**Indexes:**
+- idx_ratings_content (content_type, content_id)
+- idx_ratings_source (source)
+
+**Note:** The ratings table was updated in a later migration to support different rating types (main, critic, audience) and to store additional details in a JSONB field.
 
 ### watch_providers
-```sql
-CREATE TABLE watch_providers (
-    id INTEGER PRIMARY KEY,  -- TMDB ID
-    name VARCHAR(100) NOT NULL,
-    logo_path VARCHAR(255),
-    priority INTEGER         -- For sorting/display order
-);
-```
+
+Stores information about streaming platforms and other content providers.
+
+**Columns:**
+- `id` (integer): Primary key
+- `name` (varchar(100)): Provider name (not null)
+- `logo_path` (varchar(255)): Logo image path
+- `priority` (integer): Display priority/order
 
 ### watch_links
-```sql
-CREATE TABLE watch_links (
-    id SERIAL PRIMARY KEY,
-    content_type VARCHAR(10) NOT NULL,  -- 'movie' or 'tv'
-    content_id INTEGER NOT NULL,        -- References movies.id or tv_series.id
-    provider_id INTEGER REFERENCES watch_providers(id),
-    country_code VARCHAR(2) NOT NULL,
-    link_type VARCHAR(20) NOT NULL,     -- 'rent', 'buy', 'stream', 'free'
-    url VARCHAR(255),
-    price DECIMAL(10,2),                -- For rent/buy options
-    currency VARCHAR(3),
-    last_verified TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(content_type, content_id, provider_id, country_code, link_type)
-);
-```
 
-### cast_members
-```sql
-CREATE TABLE cast_members (
-    id INTEGER PRIMARY KEY,  -- TMDB ID
-    name VARCHAR(255) NOT NULL,
-    profile_path VARCHAR(255),
-    gender INTEGER,
-    popularity DECIMAL(10,4)
-);
-```
+Stores detailed information about where to watch content.
 
-### movie_cast
-```sql
-CREATE TABLE movie_cast (
-    movie_id INTEGER REFERENCES movies(id),
-    cast_id INTEGER REFERENCES cast_members(id),
-    character_name VARCHAR(255),
-    order_index INTEGER,
-    department VARCHAR(50),
-    job VARCHAR(100),
-    PRIMARY KEY (movie_id, cast_id)
-);
-```
+**Columns:**
+- `id` (integer): Primary key
+- `content_type` (varchar(10)): 'movie' or 'tv'
+- `content_id` (integer): References content ID (movies.id or tv_series.id)
+- `provider_id` (integer): References watch_providers.id (with CASCADE delete)
+- `country_code` (varchar(2)): Two-letter country code
+- `link_type` (varchar(20)): 'rent', 'buy', 'stream', 'free'
+- `url` (varchar(255)): Direct URL to watch the content
+- `price` (decimal(10,2)): Price for rent/buy options
+- `currency` (varchar(3)): Currency code for the price
+- `raw_price` (varchar): Original price string (e.g., "Subscription", "Free")
+- `is_subscription` (boolean): Whether this is subscription-based (default: false)
+- `is_free` (boolean): Whether this is free content (default: false)
+- `last_verified` (timestamp): When this link was last verified
+- `created_at` (timestamp): Record creation timestamp (default: now)
+- `updated_at` (timestamp): Record update timestamp (default: now)
 
-### tv_cast
-```sql
-CREATE TABLE tv_cast (
-    tv_id INTEGER REFERENCES tv_series(id),
-    cast_id INTEGER REFERENCES cast_members(id),
-    character_name VARCHAR(255),
-    order_index INTEGER,
-    department VARCHAR(50),
-    job VARCHAR(100),
-    PRIMARY KEY (tv_id, cast_id)
-);
-```
+**Unique Constraint:** (content_type, content_id, provider_id, country_code, link_type)
 
-## Indexes
+**Indexes:**
+- idx_watch_links_content (content_type, content_id)
+- idx_watch_links_country (country_code)
+- idx_watch_links_provider (provider_id)
 
-```sql
--- Movies
-CREATE INDEX idx_movies_tmdb_id ON movies(tmdb_id);
-CREATE INDEX idx_movies_imdb_id ON movies(imdb_id);
-CREATE INDEX idx_movies_release_date ON movies(release_date);
-CREATE INDEX idx_movies_popularity ON movies(popularity);
-CREATE INDEX idx_movies_next_update ON movies(next_update_time) WHERE next_update_time IS NOT NULL;
+## Schema Evolution
 
--- TV Series
-CREATE INDEX idx_tv_series_tmdb_id ON tv_series(tmdb_id);
-CREATE INDEX idx_tv_series_imdb_id ON tv_series(imdb_id);
-CREATE INDEX idx_tv_series_first_air_date ON tv_series(first_air_date);
-CREATE INDEX idx_tv_series_popularity ON tv_series(popularity);
-CREATE INDEX idx_tv_series_next_update ON tv_series(next_update_time) WHERE next_update_time IS NOT NULL;
+The database schema has evolved through the following migrations:
 
--- External IDs
-CREATE INDEX idx_external_ids_content ON external_ids(content_type, content_id);
-CREATE INDEX idx_external_ids_source ON external_ids(source);
+1. **Initial Schema (20230407)** - Created all core tables and indexes
+2. **Add Credits to Movies (20240318)** - Added the credits JSONB field to movies
+3. **Add Price Details to Watch Links (20240601)** - Added raw_price, is_subscription, and is_free fields to watch_links
+4. **Alter External IDs Length (20250408)** - Increased external_id field length from 100 to 255 characters
+5. **Update Ratings Table (20250716)** - Added rating_type and details fields, removed review_count, and updated unique constraints
 
--- Ratings
-CREATE INDEX idx_ratings_content ON ratings(content_type, content_id);
-CREATE INDEX idx_ratings_source ON ratings(source);
+## Design Notes
 
--- Watch Links
-CREATE INDEX idx_watch_links_content ON watch_links(content_type, content_id);
-CREATE INDEX idx_watch_links_country ON watch_links(country_code);
-CREATE INDEX idx_watch_links_provider ON watch_links(provider_id);
-```
+1. The schema supports both movies and potentially TV series (content_type field in enrichment tables)
+2. Update scheduling is managed through next_update_time and update_frequency fields
+3. External IDs table allows for multiple external identifiers with confidence scoring
+4. Watch links support different pricing models (buy, rent, subscription, free) with regional variations
+5. Ratings support multiple rating types per source (main, critic, audience)
 
-## Notes
-
-1. All tables include `created_at` and `updated_at` timestamps for tracking data freshness
-2. The schema supports both movies and TV series with similar structures
-3. External IDs table allows for multiple sources and confidence scoring
-4. Watch links support different types (rent/buy/stream) and regional variations
-5. Cast members are normalized to avoid duplication
-6. Indexes are created for commonly queried fields
-7. The schema is designed to be easily extensible for additional enrichment data
-8. Update scheduling is managed through next_update_time in the core tables
-9. When a movie/TV show is updated, all related data (external IDs, ratings, watch links) is refreshed 
+## Mandatory rules
+1. Always use `npm run migrate` to create a new migration
+2. Always update this doc whenever a db schema update happens, be it create, alter delete etc to keep this schema documentation up to date.

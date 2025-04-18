@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+There are many scripts that allow us to run scraping and enrichment directly with npx commands
+
+they are in the `src/scripts` folder
+
+here is the full list:
+
+- `enrichSingleContent.ts` - Enriches a movie or TV series with ratings, Wikidata external IDs, and Google knowledge panel data
+  - Parameters: `<contentType>` (`movie` or `tv`), `<tmdbId>`, `[countryCode]` (default: `US`)
+  - Example: `npx ts-node src/scripts/enrichSingleContent.ts movie 550 US`
+
+- `testScraper.ts` - Tests the ratings scraper functionality for IMDb and Rotten Tomatoes
+  - No parameters (uses hardcoded test data for The Shawshank Redemption)
+  - Example: `npx ts-node src/scripts/testScraper.ts`
+
+- `populateMovies.ts` - Imports movies from TMDB API into the database with genres, production companies, and external IDs
+  - Parameters: 
+    - `--limit <number>` - Limit the number of movies to fetch
+    - `--date <date>` - Fetch TMDB export from specific date (YYYY-MM-DD)
+    - `--create-only` - Only fetch and process movies that are not already in the database
+  - Example: `npx ts-node src/scripts/populateMovies.ts --limit 100 --date 2023-05-01`
+
+- `enrichGoogleKnowledgePanel.ts` - Enriches a specific movie or TV series with Google knowledge panel data for a given country
+  - Parameters: `<contentType>` (`movie` or `tv`), `<tmdbId>`, `[countryCode]` (default: `US`)
+  - Example: `npx ts-node src/scripts/enrichGoogleKnowledgePanel.ts movie 550 US`
+
+- `enrichWikidataExternalIds.ts` - Enriches a movie or TV series with external IDs from Wikidata using a Wikidata ID
+  - Parameters: `<contentType>` (`movie` or `tv`), `<tmdbId>`, `[wikidataId]`
+  - Example: `npx ts-node src/scripts/enrichWikidataExternalIds.ts movie 550 Q172241`
+
+- `testGoogleScraper.ts` - Tests the Google knowledge panel scraper functionality for a specific search
+  - No parameters (uses hardcoded test data for The Shawshank Redemption)
+  - Example: `npx ts-node src/scripts/testGoogleScraper.ts`
+
+- `enrichRatings.ts` - Batch enriches all movies and TV shows that have external IDs with ratings data
+  - No parameters (processes all eligible content)
+  - Example: `npx ts-node src/scripts/enrichRatings.ts`
+
+- `updateApiConfig.ts` - Updates the API Gateway configuration by fetching serverless info and storing it in config files
+  - No parameters
+  - Example: `npx ts-node src/scripts/updateApiConfig.ts`
+
+ALWAYS update this list when changing or removing or adding a new script

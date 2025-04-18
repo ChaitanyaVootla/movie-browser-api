@@ -1,7 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
-import { logger } from '../utils/logger';
+import logger from '@utils/logger';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { LambdaService } from '@services/aws/lambda.service';
+
+const execPromise = promisify(exec);
 
 interface ApiConfig {
     apiGatewayUrl: string;
@@ -11,132 +15,94 @@ interface ApiConfig {
     endpoints: string[];
 }
 
-function parseServerlessOutput(output: string): any {
-    logger.debug('Raw serverless output:', output);
-
-    const lines = output.split('\n');
-    const info: any = {
-        stage: '',
-        region: '',
-        endpoints: [],
-        serviceEndpoint: ''
-    };
-
-    let currentSection = '';
-
-    for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine) continue;
-        
-        logger.debug('Processing line:', trimmedLine);
-
-        // Parse based on line content
-        if (trimmedLine.startsWith('stage:')) {
-            info.stage = trimmedLine.split(':')[1].trim();
-            logger.debug('Found stage:', info.stage);
-        } else if (trimmedLine.startsWith('region:')) {
-            info.region = trimmedLine.split(':')[1].trim();
-            logger.debug('Found region:', info.region);
-        } else if (trimmedLine === 'endpoints:') {
-            currentSection = 'endpoints';
-        } else if (currentSection === 'endpoints' && trimmedLine.includes(' - ')) {
-            const parts = trimmedLine.split(' - ');
-            if (parts.length > 1) {
-                const endpoint = parts[1].trim();
-                info.endpoints.push(endpoint);
-                logger.debug('Found endpoint:', endpoint);
-
-                // If this is the first endpoint, use it as the base URL
-                if (info.endpoints.length === 1) {
-                    info.serviceEndpoint = endpoint.split('/').slice(0, 3).join('/');
-                    logger.debug('Set service endpoint:', info.serviceEndpoint);
-                }
-            }
-        }
-    }
-
-    logger.debug('Parsed serverless info:', info);
-
-    if (!info.serviceEndpoint && info.endpoints.length === 0) {
-        throw new Error('Could not find API Gateway URL in serverless output. Available info: ' + JSON.stringify(info, null, 2));
-    }
-
-    return {
-        ...info,
-        apiGatewayUrl: info.serviceEndpoint
-    };
-}
-
-async function getServerlessInfo(): Promise<any> {
-    // Use direct path to serverless
-    logger.debug('Running serverless info command...');
-
-    const serverlessPath = path.join(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'serverless.cmd' : 'serverless');
-    
-    if (!fs.existsSync(serverlessPath)) {
-        throw new Error(`Serverless binary not found at ${serverlessPath}. Please run npm install first.`);
-    }
-
-    logger.debug('Using serverless at:', serverlessPath);
-
-    const result = spawnSync(serverlessPath, ['info', '--verbose'], {
-        encoding: 'utf8',
-        shell: true,
-        cwd: process.cwd(),
-        windowsHide: true,
-        env: {
-            ...process.env,
-            FORCE_COLOR: '0'
-        }
-    });
-
-    if (result.error) {
-        logger.error('Serverless command error:', result.error);
-        throw new Error(`Failed to execute serverless command: ${result.error.message}`);
-    }
-
-    // Log the raw output for debugging
-    const stdout = result.stdout.replace(/\r\n/g, '\n').trim();
-    logger.debug('Raw stdout:', stdout);
-    logger.debug('Raw stderr:', result.stderr);
-    logger.debug('Command status:', result.status);
-
-    if (result.status !== 0) {
-        logger.error('Serverless command failed:', result.stderr);
-        throw new Error(`Serverless command failed with status ${result.status}. Error: ${result.stderr}`);
-    }
-
+async function runServerlessInfo(): Promise<string> {
+    logger.info('Running serverless info command...');
     try {
-        return parseServerlessOutput(stdout);
+        const { stdout } = await execPromise('npx serverless info');
+        return stdout;
     } catch (error) {
         if (error instanceof Error) {
-            throw new Error(`Failed to parse serverless output: ${error.message}`);
+            logger.error('Failed to run serverless info command:', error.message);
+            throw error;
+        } else {
+            logger.error('Failed to run serverless info command: Unknown error');
+            throw new Error('Failed to run serverless info command');
         }
-        throw new Error('Failed to parse serverless output');
     }
+}
+
+async function parseServerlessInfo(infoOutput: string): Promise<ApiConfig> {
+    logger.info('Parsing serverless info output...');
+    
+    // Extract relevant information using regex
+    const stageMatch = infoOutput.match(/stage:\s*([^\s]+)/i);
+    const regionMatch = infoOutput.match(/region:\s*([^\s]+)/i);
+    const endpointMatch = infoOutput.match(/endpoint:\s*([^\n]+)/i);
+    
+    // Extract all functions that have HTTP endpoints
+    const functionMatches = [...infoOutput.matchAll(/functions:\s+([^\n]+)\s+([^\n]+)\s+([^\n]+)/g)];
+    
+    // Create endpoints array by parsing function endpoints
+    const endpoints: string[] = [];
+    for (const match of functionMatches) {
+        if (match[2] && match[2].includes('http')) {
+            endpoints.push(match[2].trim());
+        }
+        if (match[3] && match[3].includes('http')) {
+            endpoints.push(match[3].trim());
+        }
+    }
+    
+    // If no endpoints found in functions section, use the main endpoint
+    if (endpoints.length === 0 && endpointMatch && endpointMatch[1]) {
+        endpoints.push(endpointMatch[1].trim());
+    }
+    
+    return {
+        apiGatewayUrl: endpointMatch ? endpointMatch[1].trim() : '',
+        stage: stageMatch ? stageMatch[1].trim() : 'dev',
+        region: regionMatch ? regionMatch[1].trim() : '',
+        lastUpdated: new Date().toISOString(),
+        endpoints: endpoints
+    };
 }
 
 async function updateApiConfig() {
     try {
-        logger.info('Fetching API Gateway configuration from Serverless...');
+        logger.info('Updating API Gateway configuration...');
         
-        const info = await getServerlessInfo();
+        // Run serverless info and get the output
+        const serverlessInfoOutput = await runServerlessInfo();
         
-        const config: ApiConfig = {
-            apiGatewayUrl: info.apiGatewayUrl,
-            stage: info.stage || 'dev',
-            region: info.region || 'ap-south-2',
-            lastUpdated: new Date().toISOString(),
-            endpoints: info.endpoints || []
-        };
-
-        logger.debug('Generated config:', config);
-
+        // Save raw output to file
+        const rawOutputPath = path.join(process.cwd(), 'config', 'serverless-info.txt');
+        
         // Create config directory if it doesn't exist
         const configDir = path.join(process.cwd(), 'config');
         if (!fs.existsSync(configDir)) {
             fs.mkdirSync(configDir, { recursive: true });
         }
+        
+        // Write raw output to file
+        fs.writeFileSync(rawOutputPath, serverlessInfoOutput);
+        logger.info(`Serverless info output saved to ${rawOutputPath}`);
+        
+        // Parse the output to generate config
+        const config = await parseServerlessInfo(serverlessInfoOutput);
+        
+        // If parsing failed to get API Gateway URL, fall back to hard-coded values
+        if (!config.apiGatewayUrl) {
+            logger.warn('Could not parse API Gateway URL from serverless info, using fallback values');
+            config.apiGatewayUrl = 'https://zjb4vpykla.execute-api.ap-south-2.amazonaws.com/dev';
+            config.stage = 'dev';
+            config.region = 'ap-south-2';
+            config.endpoints = [
+                'https://zjb4vpykla.execute-api.ap-south-2.amazonaws.com/dev/scrape',
+                'https://zjb4vpykla.execute-api.ap-south-2.amazonaws.com/dev/scrape/google'
+            ];
+        }
+
+        logger.debug('Generated config:', config);
 
         // Write config to file
         const configPath = path.join(configDir, 'api.config.json');

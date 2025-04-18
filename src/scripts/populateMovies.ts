@@ -1,16 +1,17 @@
 import { config } from 'dotenv';
-import { TMDBService } from '../services/TMDBService';
-import { MovieRepository } from '../repositories/movie.repository';
-import { GenreRepository } from '../repositories/genre.repository';
-import { ProductionCompanyRepository } from '../repositories/production-company.repository';
-import db from '../config/database';
+import { TMDBService } from '@services/TMDBService';
+import { MovieRepository } from '@repositories/movie.repository';
+import { GenreRepository } from '@repositories/genre.repository';
+import { ProductionCompanyRepository } from '@repositories/production-company.repository';
+import db from '@config/database';
 import { Knex } from 'knex'; // Import Knex type for transaction
 import * as async from 'async'; // Import async library
 // Import Zod schemas to infer types
 import { TMDBGenreSchema, TMDBProductionCompanySchema, TMDBMovie } from '../types/tmdb';
 import { z } from 'zod'; // Import z for inference
-import { Genre } from '../schemas/genre.schema'; // Import full Genre type for cache
-import { ProductionCompany } from '../schemas/production-company.schema'; // Import full ProductionCompany type
+import { Genre } from '@schemas/genre.schema'; // Import full Genre type for cache
+import { ProductionCompany } from '@schemas/production-company.schema'; // Import full ProductionCompany type
+import logger from '@utils/logger';
 
 // Infer types from schemas
 type TMDBGenre = z.infer<typeof TMDBGenreSchema>;
@@ -18,12 +19,12 @@ type TMDBProductionCompany = z.infer<typeof TMDBProductionCompanySchema>;
 
 // --- Global Error Handlers ---
 process.on('uncaughtException', error => {
-    console.error('!!! Uncaught Exception:', error);
+    logger.error('!!! Uncaught Exception:', error);
     process.exit(1); // Exit process on unhandled exceptions
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('!!! Unhandled Rejection at:', promise, 'reason:', reason);
+    logger.error('!!! Unhandled Rejection at:', promise, 'reason:', reason);
     // Optionally exit or log, but be cautious as multiple rejections can occur
     // process.exit(1);
 });
@@ -49,7 +50,7 @@ async function parseArgs(): Promise<PopulateOptions> {
             const limitArg = process.argv[++i];
             const limit = parseInt(limitArg, 10);
             if (isNaN(limit) || limit <= 0) {
-                console.error(`Invalid limit: ${limitArg}`);
+                logger.error(`Invalid limit: ${limitArg}`);
                 process.exit(1);
             }
             options.limit = limit;
@@ -57,14 +58,14 @@ async function parseArgs(): Promise<PopulateOptions> {
             const dateArg = process.argv[++i];
             // Validate date format (YYYY-MM-DD)
             if (!/^\d{4}-\d{2}-\d{2}$/.test(dateArg)) {
-                console.error(`Invalid date format: ${dateArg}. Expected YYYY-MM-DD`);
+                logger.error(`Invalid date format: ${dateArg}. Expected YYYY-MM-DD`);
                 process.exit(1);
             }
             options.date = dateArg;
         } else if (arg === '--create-only') {
             options.createOnly = true;
         } else if (arg === '--help') {
-            console.log(`
+            logger.info(`
 Usage: ts-node populateMovies.ts [options]
 
 Options:
@@ -95,7 +96,7 @@ async function processSingleMovie(
     const movieDetails = await tmdbService.getMovieDetails(movieId);
 
     if (!movieDetails) {
-        console.warn(`[${movieId}] Movie not found in TMDB, skipping.`);
+        logger.warn(`[${movieId}] Movie not found in TMDB, skipping.`);
         return;
     }
 
@@ -111,7 +112,7 @@ async function processSingleMovie(
         }
 
         if (!dbMovieId) {
-            console.error(`[${movieId}] Failed to get a database ID for the movie. Skipping related data.`);
+            logger.error(`[${movieId}] Failed to get a database ID for the movie. Skipping related data.`);
             throw new Error(`Failed to obtain dbMovieId for TMDB ID ${movieId}`);
         }
 
@@ -126,7 +127,7 @@ async function processSingleMovie(
                 );
                 await genreRepository.addMovieGenres(dbMovieId, genreIds, undefined);
             } catch (genreError) {
-                console.error(`[${movieId}] Error processing genres:`, genreError);
+                logger.error(`[${movieId}] Error processing genres:`, genreError);
             }
         }
 
@@ -149,7 +150,7 @@ async function processSingleMovie(
                 );
                 await productionCompanyRepository.addMovieCompanies(dbMovieId, companyIds, undefined);
             } catch (companyError) {
-                console.error(`[${movieId}] Error processing companies:`, companyError);
+                logger.error(`[${movieId}] Error processing companies:`, companyError);
             }
         }
 
@@ -185,7 +186,7 @@ async function processSingleMovie(
         }
     } catch (error) {
         // Keep this error log
-        console.error(`[${movieId}] Error during processing steps:`, error);
+        logger.error(`[${movieId}] Error during processing steps:`, error);
         throw error;
     }
 }
@@ -215,19 +216,19 @@ async function populateMovies(options: PopulateOptions) {
         // Get the list of movie IDs to populate
         let allMovieIds = await tmdbService.getDailyExportMovieIds(exportDate);
         let totalMoviesInExport = allMovieIds.length;
-        console.log(
+        logger.info(
             `Found ${totalMoviesInExport} movie IDs in TMDB export for ${exportDate.toISOString().split('T')[0]}.`
         );
 
         // If --create-only flag is set, filter out existing IDs
         if (options.createOnly) {
-            console.log('Checking which movies already exist in the database (create-only mode)...');
+            logger.info('Checking which movies already exist in the database (create-only mode)...');
             const existingTmdbIds = await movieRepository.findAllTmdbIds(); // Assumes this method exists
             const existingSet = new Set(existingTmdbIds);
             const originalCount = allMovieIds.length;
             allMovieIds = allMovieIds.filter(id => !existingSet.has(id));
             const newCount = allMovieIds.length;
-            console.log(`Filtered out ${originalCount - newCount} existing movies. Processing ${newCount} new movies.`);
+            logger.info(`Filtered out ${originalCount - newCount} existing movies. Processing ${newCount} new movies.`);
         }
 
         const totalMoviesToProcess = allMovieIds.length;
@@ -236,16 +237,16 @@ async function populateMovies(options: PopulateOptions) {
         if (scriptLimit !== undefined && scriptLimit > 0 && totalMoviesToProcess > scriptLimit) {
             allMovieIds = allMovieIds.slice(0, scriptLimit);
             const limitedTotal = allMovieIds.length;
-            console.log(`Applying limit: processing ${limitedTotal} movies.`);
+            logger.info(`Applying limit: processing ${limitedTotal} movies.`);
             const totalMoviesToProcess = limitedTotal;
         }
 
         if (totalMoviesToProcess === 0) {
-            console.log('No movies to process based on current options.');
+            logger.info('No movies to process based on current options.');
             return; // Exit early if no movies left to process
         }
 
-        console.log(
+        logger.info(
             `Processing ${totalMoviesToProcess} movies in batches of ${BATCH_SIZE} (concurrency: ${CONCURRENCY_LIMIT})...`
         );
 
@@ -260,7 +261,7 @@ async function populateMovies(options: PopulateOptions) {
                 const batchNumber = (batchIndex as number) + 1;
                 const totalBatches = Math.ceil(totalMoviesToProcess / BATCH_SIZE);
 
-                console.log(`\n--- Processing Batch ${batchNumber}/${totalBatches} (${batchIds.length} movies) ---`);
+                logger.info(`\n--- Processing Batch ${batchNumber}/${totalBatches} (${batchIds.length} movies) ---`);
                 const batchStartTime = Date.now();
 
                 // Use async.mapLimit again for processing movies within the batch
@@ -291,7 +292,7 @@ async function populateMovies(options: PopulateOptions) {
                     } else {
                         batchFailureCount++;
                         // Log the reason for rejection from the mapLimit result
-                        console.error(`[${result.movieId}] Error during processing steps:`, result.reason);
+                        logger.error(`[${result.movieId}] Error during processing steps:`, result.reason);
                     }
                 });
 
@@ -300,7 +301,7 @@ async function populateMovies(options: PopulateOptions) {
                 totalProcessed += batchIds.length;
                 const batchEndTime = Date.now();
                 const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
-                console.log(
+                logger.info(
                     `Batch ${batchNumber} Summary: ${batchSuccessCount} succeeded, ${batchFailureCount} failed in ${batchDuration}s.`
                 );
 
@@ -317,11 +318,11 @@ async function populateMovies(options: PopulateOptions) {
                     const minutes = Math.floor((estimatedRemainingSeconds % 3600) / 60);
                     const seconds = estimatedRemainingSeconds % 60;
                     const etaString = `${hours}h ${minutes}m ${seconds}s`;
-                    console.log(
+                    logger.info(
                         `Overall Progress: ${totalProcessed}/${totalMoviesToProcess} movies. Total Failures: ${totalFailureCount}. Cache Hits (G/C): ${genreCache.size}/${companyCache.size}. ETA: ${etaString}`
                     );
                 } else {
-                    console.log(
+                    logger.info(
                         `Overall Progress: ${totalProcessed}/${totalMoviesToProcess} movies. Total Failures: ${totalFailureCount}. Cache Hits (G/C): ${genreCache.size}/${companyCache.size}. ETA: Calculating...`
                     );
                 }
@@ -329,12 +330,12 @@ async function populateMovies(options: PopulateOptions) {
             }
         );
 
-        console.log(`\n=== Population Complete ===`);
-        console.log(`Total movies processed: ${totalProcessed}`);
-        console.log(`Total successes: ${totalSuccessCount}`);
-        console.log(`Total failures: ${totalFailureCount}`);
+        logger.info(`\n=== Population Complete ===`);
+        logger.info(`Total movies processed: ${totalProcessed}`);
+        logger.info(`Total successes: ${totalSuccessCount}`);
+        logger.info(`Total failures: ${totalFailureCount}`);
     } catch (error) {
-        console.error('Critical error during movie population setup or batch processing:', error);
+        logger.error('Critical error during movie population setup or batch processing:', error);
         process.exit(1);
     }
 }
@@ -343,22 +344,22 @@ async function main() {
     const startTime = Date.now();
     try {
         const options = await parseArgs();
-        console.log('Starting movie population script with options:', options);
+        logger.info('Starting movie population script with options:', options);
 
         // Call the local populateMovies function with parsed options
         await populateMovies(options);
     } catch (error) {
-        console.error('Unhandled error in main execution:', error);
+        logger.error('Unhandled error in main execution:', error);
         process.exitCode = 1; // Set exit code to indicate failure
     } finally {
         // Ensure the database connection pool is destroyed
-        console.log('Closing database connection pool...');
+        logger.info('Closing database connection pool...');
         await db.destroy();
-        console.log('Database connection pool closed.');
+        logger.info('Database connection pool closed.');
 
         const endTime = Date.now();
         const duration = (endTime - startTime) / 1000;
-        console.log(`\nTotal script execution time: ${duration.toFixed(2)} seconds.`);
+        logger.info(`\nTotal script execution time: ${duration.toFixed(2)} seconds.`);
 
         // Exit explicitly if needed, though closing the pool should be enough
         // process.exit(process.exitCode || 0);

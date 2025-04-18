@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { MovieRepository } from '../repositories/movie.repository';
-import { MovieQuerySchema } from '../schemas/movie.schema';
+import { MovieRepository } from '@repositories/movie.repository';
+import { MovieQuerySchema } from '@schemas/movie.schema';
 
 const movieRepository = new MovieRepository();
 
@@ -16,7 +16,7 @@ export const getMovies = async (req: Request, res: Response): Promise<void> => {
         const total = await movieRepository.count(queryParams);
 
         res.status(200).json({
-            data: movies,
+            movies,
             pagination: {
                 total,
                 page: queryParams.page,
@@ -36,15 +36,21 @@ export const getMovieById = async (req: Request, res: Response): Promise<void> =
 
         // Check if it's an IMDb ID (starts with 'tt')
         if (id.startsWith('tt')) {
-            const movie = await movieRepository.findByImdbId(id);
+            try {
+                const movie = await movieRepository.findByImdbId(id);
 
-            if (!movie) {
-                res.status(404).json({ error: 'Movie not found' });
+                if (!movie) {
+                    res.status(404).json({ error: 'Movie not found' });
+                    return;
+                }
+
+                res.status(200).json(movie);
+                return;
+            } catch (error) {
+                console.error('Error fetching movie by IMDb ID:', error);
+                res.status(500).json({ error: 'Failed to fetch movie details' });
                 return;
             }
-
-            res.status(200).json({ data: movie });
-            return;
         }
 
         // Otherwise, treat it as a TMDB ID
@@ -55,17 +61,23 @@ export const getMovieById = async (req: Request, res: Response): Promise<void> =
             return;
         }
 
-        const movie = await movieRepository.findByTmdbId(tmdbId);
+        try {
+            const movie = await movieRepository.findByTmdbId(tmdbId);
 
-        if (!movie) {
-            res.status(404).json({ error: 'Movie not found' });
+            if (!movie) {
+                res.status(404).json({ error: 'Movie not found' });
+                return;
+            }
+
+            res.status(200).json(movie);
+        } catch (error) {
+            console.error('Error fetching movie by TMDB ID:', error);
+            res.status(500).json({ error: 'Failed to fetch movie details' });
             return;
         }
-
-        res.status(200).json({ data: movie });
     } catch (error) {
-        console.error('Error fetching movie:', error);
-        res.status(500).json({ error: 'Failed to fetch movie' });
+        console.error('Error in getMovieById:', error);
+        res.status(500).json({ error: 'Failed to process request' });
     }
 };
 
@@ -85,7 +97,7 @@ export const getMovieByTmdbId = async (req: Request, res: Response): Promise<voi
             return;
         }
 
-        res.status(200).json({ data: movie });
+        res.status(200).json(movie);
     } catch (error) {
         console.error('Error fetching movie by TMDB ID:', error);
         res.status(500).json({ error: 'Failed to fetch movie' });
@@ -96,7 +108,7 @@ export const getPopularMovies = async (req: Request, res: Response): Promise<voi
     try {
         const limit = parseInt((req.query.limit as string) || '20', 10);
         const movies = await movieRepository.findPopularMovies(limit);
-        res.status(200).json({ data: movies });
+        res.status(200).json(movies);
     } catch (error) {
         console.error('Error fetching popular movies:', error);
         res.status(500).json({ error: 'Failed to fetch popular movies' });
@@ -108,7 +120,7 @@ export const getMoviesByVoteCount = async (req: Request, res: Response): Promise
         const minVoteCount = parseInt((req.query.minVoteCount as string) || '1000', 10);
         const limit = parseInt((req.query.limit as string) || '20', 10);
         const movies = await movieRepository.findMoviesByVoteCount(minVoteCount, limit);
-        res.status(200).json({ data: movies });
+        res.status(200).json(movies);
     } catch (error) {
         console.error('Error fetching movies by vote count:', error);
         res.status(500).json({ error: 'Failed to fetch movies by vote count' });

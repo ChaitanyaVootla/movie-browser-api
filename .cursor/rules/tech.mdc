@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Main technologies
+- Nodejs with express
+- strong typing with typescript
+- AWS lambda for scraping
+
+We use the following libraries
+- knex to communicate with postgresql
+- zod for type validation
+- serverless to deploy lambda and api gateway to AWS

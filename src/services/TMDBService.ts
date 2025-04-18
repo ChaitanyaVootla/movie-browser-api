@@ -1,12 +1,13 @@
 import axios, { AxiosError } from 'axios';
 import { gunzip } from 'zlib';
 import { promisify } from 'util';
-import { MovieRepository } from '../repositories/movie.repository';
-import { GenreRepository } from '../repositories/genre.repository';
-import { ProductionCompanyRepository } from '../repositories/production-company.repository';
+import { MovieRepository } from '@repositories/movie.repository';
+import { GenreRepository } from '@repositories/genre.repository';
+import { ProductionCompanyRepository } from '@repositories/production-company.repository';
 import { TMDBMovie, TMDBMovieSchema } from '../types/tmdb';
-import db from '../config/database';
+import db from '@config/database';
 import { z } from 'zod';
+import logger from '@utils/logger';
 
 const gunzipAsync = promisify(gunzip);
 
@@ -77,7 +78,7 @@ export class TMDBService {
                 // If it's a rate limit error (429), wait longer before retrying
                 if (axiosError.response?.status === 429) {
                     const retryAfter = parseInt(axiosError.response?.headers['retry-after'] || '1', 10);
-                    console.warn(`Rate limited by TMDB API. Waiting ${retryAfter} seconds before retry.`);
+                    logger.warn(`Rate limited by TMDB API. Waiting ${retryAfter} seconds before retry.`);
                     await this.delay(retryAfter * 1000);
                     retries++;
                     continue;
@@ -86,19 +87,19 @@ export class TMDBService {
                 // For server errors (5xx), retry with exponential backoff
                 if (axiosError.response?.status && axiosError.response.status >= 500) {
                     const backoff = Math.pow(2, retries) * 1000;
-                    console.warn(`TMDB server error (${axiosError.response.status}). Retrying in ${backoff}ms...`);
+                    logger.warn(`TMDB server error (${axiosError.response.status}). Retrying in ${backoff}ms...`);
                     await this.delay(backoff);
                     retries++;
                     continue;
                 }
 
                 // For other errors, don't retry
-                console.error(`Non-retryable error during TMDB request to ${url}:`, error);
+                logger.error(`Non-retryable error during TMDB request to ${url}:`, error);
                 throw error;
             }
         }
 
-        console.error(`Failed request to ${url} after ${this.maxRetries} retries`);
+        logger.error(`Failed request to ${url} after ${this.maxRetries} retries`);
         throw new Error(`Failed request to ${url} after ${this.maxRetries} retries`);
     }
 
@@ -108,12 +109,6 @@ export class TMDBService {
                 append_to_response: 'credits,keywords,external_ids',
             });
 
-            // Log the genres and production companies
-            // console.log(`Movie ${movieId} data from TMDB:`);
-            // console.log(`Genres: ${JSON.stringify(movieData.genres || [])}`);
-            // console.log(`Production companies: ${JSON.stringify(movieData.production_companies || [])}`);
-            // console.log(`External IDs: ${JSON.stringify(movieData.external_ids || {})}`);
-
             // Validate response data against schema
             return TMDBMovieSchema.parse(movieData);
         } catch (error) {
@@ -122,7 +117,7 @@ export class TMDBService {
                 return null;
             }
 
-            console.error(`Error fetching movie ${movieId}:`, error);
+            logger.error(`Error fetching movie ${movieId}:`, error);
             throw error;
         }
     }
@@ -141,7 +136,7 @@ export class TMDBService {
         // The URL now uses MM_DD_YYYY format for yesterday's export
         const url = `http://files.tmdb.org/p/exports/movie_ids_${formattedDate}.json.gz`;
 
-        console.log(`Fetching movie IDs from ${url}`); // Log should now show yesterday's date
+        logger.info(`Fetching movie IDs from ${url}`);
 
         try {
             const response = await axios.get(url, { responseType: 'arraybuffer' });
@@ -161,7 +156,7 @@ export class TMDBService {
                     try {
                         return TMDBExportItemSchema.parse(JSON.parse(line));
                     } catch (e) {
-                        console.warn('Invalid line in TMDB export:', line);
+                        logger.warn('Invalid line in TMDB export:', line);
                         return null;
                     }
                 })
@@ -169,33 +164,33 @@ export class TMDBService {
 
             return validItems.sort((a, b) => b.popularity - a.popularity).map(item => item.id);
         } catch (error) {
-            console.error(`Error fetching daily export for ${formattedDate}:`, error);
+            logger.error(`Error fetching daily export for ${formattedDate}:`, error);
             throw error;
         }
     }
 
     private async processGenres(movieId: number, genres: TMDBMovie['genres']): Promise<void> {
         if (!genres || genres.length === 0) {
-            console.log(`No genres to process for movie ${movieId}`);
+            logger.info(`No genres to process for movie ${movieId}`);
             return;
         }
 
-        console.log(`Processing ${genres.length} genres for movie ${movieId}`);
+        logger.info(`Processing ${genres.length} genres for movie ${movieId}`);
 
         try {
             // Create or get all genres first
             const genrePromises = genres.map(genre => this.genreRepository.findOrCreate(genre.name));
             const savedGenres = await Promise.all(genrePromises);
-            console.log(`Saved genres: ${savedGenres.map(g => g.name).join(', ')}`);
+            logger.info(`Saved genres: ${savedGenres.map(g => g.name).join(', ')}`);
 
             // Link genres to movie
             await this.genreRepository.addMovieGenres(
                 movieId,
                 savedGenres.map(g => g.id)
             );
-            console.log(`Successfully linked ${savedGenres.length} genres to movie ${movieId}`);
+            logger.info(`Successfully linked ${savedGenres.length} genres to movie ${movieId}`);
         } catch (error) {
-            console.error(`Error processing genres for movie ${movieId}:`, error);
+            logger.error(`Error processing genres for movie ${movieId}:`, error);
         }
     }
 
@@ -204,11 +199,11 @@ export class TMDBService {
         companies: TMDBMovie['production_companies']
     ): Promise<void> {
         if (!companies || companies.length === 0) {
-            console.log(`No production companies to process for movie ${movieId}`);
+            logger.info(`No production companies to process for movie ${movieId}`);
             return;
         }
 
-        console.log(`Processing ${companies.length} production companies for movie ${movieId}`);
+        logger.info(`Processing ${companies.length} production companies for movie ${movieId}`);
 
         try {
             // Create or get all companies first
@@ -225,16 +220,16 @@ export class TMDBService {
             });
 
             const savedCompanies = await Promise.all(companyPromises);
-            console.log(`Saved companies: ${savedCompanies.map(c => c.name).join(', ')}`);
+            logger.info(`Saved companies: ${savedCompanies.map(c => c.name).join(', ')}`);
 
             // Link companies to movie
             await this.productionCompanyRepository.addMovieCompanies(
                 movieId,
                 savedCompanies.map(c => c.id)
             );
-            console.log(`Successfully linked ${savedCompanies.length} companies to movie ${movieId}`);
+            logger.info(`Successfully linked ${savedCompanies.length} companies to movie ${movieId}`);
         } catch (error) {
-            console.error(`Error processing production companies for movie ${movieId}:`, error);
+            logger.error(`Error processing production companies for movie ${movieId}:`, error);
         }
     }
 
@@ -281,16 +276,16 @@ export class TMDBService {
         try {
             // Get list of movie IDs to process
             const movieIds = await this.getDailyExportMovieIds();
-            console.log(`Found ${movieIds.length} movies to process`);
+            logger.info(`Found ${movieIds.length} movies to process`);
 
             // Process movies up to the limit
             for (const movieId of movieIds.slice(0, limit)) {
                 try {
-                    console.log(`\n=== Processing movie: ${movieId} (TMDB ID: ${movieId}) ===`);
+                    logger.info(`\n=== Processing movie: ${movieId} (TMDB ID: ${movieId}) ===`);
                     const movieDetails = await this.getMovieDetails(movieId);
 
                     if (!movieDetails) {
-                        console.log(`Movie ${movieId} not found in TMDB`);
+                        logger.info(`Movie ${movieId} not found in TMDB`);
                         failures++;
                         continue;
                     }
@@ -305,7 +300,7 @@ export class TMDBService {
                         const credits = this.processCredits(movieDetails);
 
                         if (movie) {
-                            console.log(`Movie exists with ID ${movie.id}, updating...`);
+                            logger.info(`Movie exists with ID ${movie.id}, updating...`);
                             await this.movieRepository.update(movie.id, {
                                 ...movieDetails,
                                 credits
@@ -362,12 +357,12 @@ export class TMDBService {
 
                     success++;
                 } catch (error) {
-                    console.error(`Error processing movie ${movieId}:`, error);
+                    logger.error(`Error processing movie ${movieId}:`, error);
                     failures++;
                 }
             }
         } catch (error) {
-            console.error('Error during movie population:', error);
+            logger.error('Error during movie population:', error);
             throw error;
         }
 

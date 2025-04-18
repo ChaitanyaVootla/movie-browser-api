@@ -1,0 +1,35 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Data collection flow
+
+## Data collection per Movie/Series
+- Base data is collected from TMDB, we fetch all movies and series through get by id calls to tmdb
+- external_ids from TMDB is stored, tmdb returns a list of external_ids which we store in our external_ids table
+- wikidata_id is present in tmdb's external_ids response which we will use to query wikidata for more external_ids like rottentomatoes, metacritic etc...
+- google knowledge panel is scraped over lambda (as it needs puppeteer which is heavy and also changing VM IPs will help avoid bot detection)
+    - we will use the gl query param to set the country in google search so we get regional watch links
+    - we will get data from google like ratings info and watch links
+    - we will see if we are missing external_ids for ratings in the db and upsert them, we will not store the actual rating info as the ratings scraper will take care of that, we will just update external_ids
+    - we will upsert all watch links along with their price information
+
+- Future phase: willhave to create a new scraper class to scrape the home page for every watch link to get info like the audio languages, the video options like HD, dolby vision etc and store them
+
+## Data freshness and update flow
+We will use the following methods to keep data up to date
+
+### Popularity and change based updates
+We will leverage markers like popularity, recent-ness and updates to the tmdb entities to decide on a update frequency strategy for movies and series, for this we will use the tmdb data which will provide all the three markers
+
+tmdb has a changes api exposed which will tell us which entities have been updated(upto last 15 days), we will query this daily for the days updates and trigger some or all scrapers to update on our side
+
+Another strategy is to set a update frequency on every entity in our db (in movies and tv tables) which we will use to trigger scrapers to maintain data freshness, this frequnecy as discussed before can rely on markers like release date and popularity
+
+### Wikidata cron updates
+- wikidata info is scraped periodically using a query that will return all movies's external_ids in wikidata
+- After that a service will gather all the external_ids in the db which dont have any corresponding rating info in the db and scrape for ratings info
+
+
+For immediate updates, the next_update_time in the movie/tv row can be overridden to a time in the past, triggering an update on the next service run.

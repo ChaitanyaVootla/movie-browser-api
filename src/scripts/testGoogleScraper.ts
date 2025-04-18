@@ -1,4 +1,5 @@
-import { handler } from '../services/scraping/googleKnowledgePanelScraper';
+import { handler } from '@services/scraping/googleKnowledgePanelScraper';
+import logger from '@utils/logger';
 
 // Sample test data
 const testEvent = {
@@ -20,11 +21,11 @@ const testEvent = {
 
 async function testLocalScraper() {
     try {
-        console.log('Testing Google Knowledge Panel scraper with event:', JSON.stringify(testEvent, null, 2));
+        logger.info('Testing Google Knowledge Panel scraper with event:', JSON.stringify(testEvent, null, 2));
         const result = await handler(testEvent as any);
-        console.log('Scraping result:', JSON.stringify(result, null, 2));
+        logger.info('Scraping result:', JSON.stringify(result, null, 2));
     } catch (error) {
-        console.error('Error testing scraper:', error);
+        logger.error('Error testing scraper:', error);
     }
 }
 

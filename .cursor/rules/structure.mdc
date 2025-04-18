@@ -18,7 +18,7 @@ src/schemas/        # Zod schemas for validation
 src/services/       # Business logic and external services
 src/services/enrichment/ # Data enrichment services
 src/services/scraping/   # Web scraping implementations
-src/scripts/        # Utility and maintenance scripts
+src/scripts/        # Utility and maintenance scripts refer to [scripts.md](mdc:docs/scripts.md)
 src/types/         # TypeScript type definitions
 src/utils/         # Shared utility functions
 migrations/        # Knex database migrations

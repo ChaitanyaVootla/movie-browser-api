@@ -1,10 +1,11 @@
-import { handler } from '../services/scraping/ratingsScraper';
+import { handler } from '@services/scraping/ratingsScraper';
+import logger from '@utils/logger';
 
 // Sample test data
 const testEvent = {
     body: JSON.stringify({
         imdbId: 'tt0111161', // The Shawshank Redemption
-        rottenTomatoesUrl: 'https://www.rottentomatoes.com/m/shawshank_redemption',
+        rottenTomatoesUrl: 'https://www.rottentomatoes.com/m/avengers_age_of_ultron',
     }),
     headers: {
         'Content-Type': 'application/json',
@@ -20,11 +21,11 @@ const testEvent = {
 
 async function testLocalScraper() {
     try {
-        console.log('Testing scraper with event:', JSON.stringify(testEvent, null, 2));
+        logger.info('Testing scraper with event:', JSON.stringify(testEvent, null, 2));
         const result = await handler(testEvent as any);
-        console.log('Scraping result:', JSON.stringify(result, null, 2));
+        logger.info(result.body, 'Scraping result');
     } catch (error) {
-        console.error('Error testing scraper:', error);
+        logger.error('Error testing scraper:', error);
     }
 }
 

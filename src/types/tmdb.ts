@@ -73,6 +73,7 @@ export const TMDBMovieSchema = z.object({
     tagline: z.string().nullable().optional(),
     budget: z.number().nullable().optional(),
     revenue: z.number().nullable().optional(),
+    tmdb_id: z.number().int().positive(),
     imdb_id: z.string().nullable().optional(),
     genres: z.array(TMDBGenreSchema).optional().default([]),
     production_companies: z.array(TMDBProductionCompanySchema).optional().default([]),

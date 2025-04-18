@@ -1,43 +1,34 @@
 import { Knex } from 'knex';
-import db from '../config/database';
-import { KnexRepository } from './base.repository';
+import db from '@config/database';
+import { KnexRepository } from '@repositories/base.repository';
 import {
     Movie,
+    MovieSchema,
     CreateMovieSchema,
     UpdateMovieSchema,
     MovieQuerySchema,
-    MovieSchema,
     MovieQuery,
-} from '../schemas/movie.schema';
-import { RepositoryError } from './base.repository';
-
-// Define the types for create and update operations
-type CreateMovie = Omit<Movie, 'id' | 'created_at' | 'updated_at'>;
-type UpdateMovie = Partial<CreateMovie>;
+} from '@schemas/movie.schema';
+import { RepositoryError } from '@repositories/base.repository';
+import logger from '@/utils/logger';
 
 export class MovieRepository extends KnexRepository<Movie, any, any, MovieQuery> {
     constructor() {
         super(db, 'movies', MovieSchema, CreateMovieSchema, UpdateMovieSchema, MovieQuerySchema);
     }
 
-    // Custom methods specific to movies
-    async findByTmdbId(tmdbId: number, trx?: Knex.Transaction): Promise<Movie | null> {
+    private async fetchMovieWithRelations(movieId: number, trx?: Knex.Transaction): Promise<Movie | null> {
         try {
-            const query = this.knex(this.tableName).where('tmdb_id', tmdbId).first();
-            const result = await (trx ? query.transacting(trx) : query);
-
-            if (!result) return null;
-
             // Fetch genres
             const genres = await this.knex('genres')
                 .join('movie_genres', 'genres.id', 'movie_genres.genre_id')
-                .where('movie_genres.movie_id', result.id)
+                .where('movie_genres.movie_id', movieId)
                 .select('genres.id', 'genres.name');
 
             // Fetch production companies
             const productionCompanies = await this.knex('production_companies')
                 .join('movie_production_companies', 'production_companies.id', 'movie_production_companies.company_id')
-                .where('movie_production_companies.movie_id', result.id)
+                .where('movie_production_companies.movie_id', movieId)
                 .select(
                     'production_companies.id',
                     'production_companies.name',
@@ -48,81 +39,213 @@ export class MovieRepository extends KnexRepository<Movie, any, any, MovieQuery>
             // Fetch external IDs
             const externalIds = await this.knex('external_ids')
                 .where('content_type', 'movie')
-                .where('content_id', result.id)
+                .where('content_id', movieId)
                 .select('source', 'external_id', 'url', 'confidence_score', 'last_verified');
+
+            // Fetch ratings
+            const ratings = await this.knex('ratings')
+                .where('content_type', 'movie')
+                .where('content_id', movieId)
+                .select('source', 'rating', 'rating_count', 'consensus', 'rating_type', 'last_updated');
+
+            // Convert ratings data types
+            const processedRatings = ratings.map(rating => ({
+                source: rating.source,
+                rating: rating.rating ? parseFloat(rating.rating) : null,
+                rating_count: rating.rating_count ? parseInt(rating.rating_count, 10) : null,
+                consensus: rating.consensus,
+                rating_type: rating.rating_type,
+                last_updated: rating.last_updated instanceof Date ? rating.last_updated.toISOString() : rating.last_updated
+            }));
+
+            // Fetch watch links with provider information
+            const watchLinks = await this.knex('watch_links')
+                .join('watch_providers', 'watch_links.provider_id', 'watch_providers.id')
+                .where('watch_links.content_type', 'movie')
+                .where('watch_links.content_id', movieId)
+                .select(
+                    'watch_links.provider_id',
+                    'watch_providers.name as provider_name',
+                    'watch_providers.logo_path as provider_logo',
+                    'watch_links.country_code',
+                    'watch_links.link_type',
+                    'watch_links.url',
+                    'watch_links.price',
+                    'watch_links.raw_price',
+                    'watch_links.is_subscription',
+                    'watch_links.is_free',
+                    'watch_links.currency',
+                    'watch_links.last_verified'
+                );
+
+            // Group watch links by country
+            const watchLinksByCountry = watchLinks.reduce((acc, link) => {
+                const country = link.country_code;
+                if (!acc[country]) {
+                    acc[country] = [];
+                }
+                
+                // Parse price safely, handling NaN values
+                let price = null;
+                if (link.price) {
+                    try {
+                        const parsedPrice = parseFloat(link.price);
+                        // Check if the parsed value is a valid number
+                        price = !isNaN(parsedPrice) ? parsedPrice : null;
+                    } catch (e) {
+                        price = null;
+                    }
+                }
+                
+                acc[country].push({
+                    provider_id: parseInt(link.provider_id, 10),
+                    provider_name: link.provider_name,
+                    provider_logo: link.provider_logo,
+                    link_type: link.link_type,
+                    url: link.url,
+                    price: price,
+                    raw_price: link.raw_price,
+                    is_subscription: Boolean(link.is_subscription),
+                    is_free: Boolean(link.is_free),
+                    currency: link.currency,
+                    last_verified: link.last_verified instanceof Date ? link.last_verified.toISOString() : link.last_verified
+                });
+                return acc;
+            }, {} as Record<string, any[]>);
 
             // Transform external IDs into the expected format
             const transformedExternalIds = externalIds.reduce(
                 (acc, curr) => {
-                    // Map source names to their corresponding fields
-                    const sourceMap: Record<string, string> = {
-                        imdb: 'imdb_id',
-                        wikidata: 'wikidata_id',
-                        facebook: 'facebook_id',
-                        instagram: 'instagram_id',
-                        twitter: 'twitter_id',
-                    };
-                    const field = sourceMap[curr.source];
-                    if (field) {
-                        acc[field] = curr.external_id;
-                    }
+                    acc[curr.source] = curr.external_id;
                     return acc;
                 },
                 {} as Record<string, any>
             );
 
-            // Handle Date to string conversion for timestamps
-            const normalizedResult = {
-                ...result,
-                created_at: result.created_at instanceof Date ? result.created_at.toISOString() : result.created_at,
-                updated_at: result.updated_at instanceof Date ? result.updated_at.toISOString() : result.updated_at,
-                next_update_time:
-                    result.next_update_time instanceof Date
-                        ? result.next_update_time.toISOString()
-                        : result.next_update_time,
-                last_full_update:
-                    result.last_full_update instanceof Date
-                        ? result.last_full_update.toISOString()
-                        : result.last_full_update,
-                release_date:
-                    result.release_date instanceof Date
-                        ? result.release_date.toISOString().split('T')[0]
-                        : result.release_date,
-                // Handle numeric fields that might be strings or null
-                budget: result.budget
-                    ? typeof result.budget === 'string'
-                        ? parseInt(result.budget, 10)
-                        : result.budget
-                    : 0,
-                revenue: result.revenue
-                    ? typeof result.revenue === 'string'
-                        ? parseInt(result.revenue, 10)
-                        : result.revenue
-                    : 0,
-                popularity: result.popularity
-                    ? typeof result.popularity === 'string'
-                        ? parseFloat(result.popularity)
-                        : result.popularity
-                    : 0,
-                vote_average: result.vote_average
-                    ? typeof result.vote_average === 'string'
-                        ? parseFloat(result.vote_average)
-                        : result.vote_average
-                    : 0,
-                vote_count: result.vote_count
-                    ? typeof result.vote_count === 'string'
-                        ? parseInt(result.vote_count, 10)
-                        : result.vote_count
-                    : 0,
-                // Add the fetched genres and production companies
+            return {
                 genres: genres || [],
                 production_companies: productionCompanies || [],
-                ratings: result.ratings || [],
-                // Add external IDs
+                ratings: processedRatings,
+                watch_links: watchLinksByCountry || {},
                 external_ids: transformedExternalIds,
             };
+        } catch (error) {
+            console.error(`Error fetching movie relations for ID ${movieId}:`, error);
+            if (trx) throw new RepositoryError(`Error fetching movie relations for ID ${movieId}`, error);
+            return null;
+        }
+    }
 
-            return this.schema.parse(normalizedResult);
+    private normalizeMovieResult(result: any): any {
+        // Normalize credits if present
+        let credits = result.credits;
+        if (credits) {
+            // Parse if stored as string (JSONB sometimes returns string)
+            if (typeof credits === 'string') {
+                try {
+                    credits = JSON.parse(credits);
+                } catch (e) {
+                    credits = null;
+                }
+            }
+            if (credits && Array.isArray(credits.cast)) {
+                // Find the first director
+                const directorMember = credits.crew?.find((member: any) =>
+                    member.job && member.job.toLowerCase() === 'director'
+                );
+                
+                // Format the credits with cast and crew
+                credits = {
+                    cast: credits.cast.slice(0, 10).map((member: any) => ({
+                        id: member.id,
+                        name: member.name,
+                        character: member.character,
+                        profile_path: member.profile_path || null,
+                        order: member.order
+                    })),
+                    crew: directorMember ? [{
+                        id: directorMember.id,
+                        name: directorMember.name,
+                        job: directorMember.job,
+                        profile_path: directorMember.profile_path || null
+                    }] : []
+                };
+            } else if (credits) {
+                credits = {
+                    cast: [],
+                    crew: []
+                };
+            }
+        }
+        return {
+            ...result,
+            credits,
+            created_at: result.created_at instanceof Date ? result.created_at.toISOString() : result.created_at,
+            updated_at: result.updated_at instanceof Date ? result.updated_at.toISOString() : result.updated_at,
+            next_update_time:
+                result.next_update_time instanceof Date
+                    ? result.next_update_time.toISOString()
+                    : result.next_update_time,
+            last_full_update:
+                result.last_full_update instanceof Date
+                    ? result.last_full_update.toISOString()
+                    : result.last_full_update,
+            release_date:
+                result.release_date instanceof Date
+                    ? result.release_date.toISOString().split('T')[0]
+                    : result.release_date,
+            // Handle numeric fields that might be strings or null
+            budget: result.budget
+                ? typeof result.budget === 'string'
+                    ? parseInt(result.budget, 10)
+                    : result.budget
+                : 0,
+            revenue: result.revenue
+                ? typeof result.revenue === 'string'
+                    ? parseInt(result.revenue, 10)
+                    : result.revenue
+                : 0,
+            popularity: result.popularity
+                ? typeof result.popularity === 'string'
+                    ? parseFloat(result.popularity)
+                    : result.popularity
+                : 0,
+            vote_average: result.vote_average
+                ? typeof result.vote_average === 'string'
+                    ? parseFloat(result.vote_average)
+                    : result.vote_average
+                : 0,
+            vote_count: result.vote_count
+                ? typeof result.vote_count === 'string'
+                    ? parseInt(result.vote_count, 10)
+                    : result.vote_count
+                : 0,
+        };
+    }
+
+    async findByTmdbId(tmdbId: number, trx?: Knex.Transaction): Promise<Movie | null> {
+        try {
+            logger.debug(`Finding movie by TMDB ID ${tmdbId}`);
+            const query = this.knex(this.tableName).where('tmdb_id', tmdbId).first();
+            const result = await (trx ? query.transacting(trx) : query);
+
+            if (!result) return null;
+
+            const relations = await this.fetchMovieWithRelations(result.id, trx);
+            if (!relations) return null;
+
+            const normalizedResult = {
+                ...this.normalizeMovieResult(result),
+                ...relations
+            };
+
+            try {
+                return this.schema.parse(normalizedResult);
+            } catch (error) {
+                console.error(`Validation error for movie TMDB ID ${tmdbId}:`, error);
+                console.error('Failed data structure:', JSON.stringify(normalizedResult, null, 2));
+                throw error;
+            }
         } catch (error) {
             console.error(`Error finding movie by TMDB ID ${tmdbId}:`, error);
             if (trx) throw new RepositoryError(`Error finding movie by TMDB ID ${tmdbId}`, error);
@@ -132,105 +255,25 @@ export class MovieRepository extends KnexRepository<Movie, any, any, MovieQuery>
 
     async findByImdbId(imdbId: string): Promise<Movie | null> {
         try {
+            logger.debug(`Finding movie by IMDb ID ${imdbId}`);
             const result = await this.knex(this.tableName).where('imdb_id', imdbId).first();
-
             if (!result) return null;
 
-            // Fetch genres
-            const genres = await this.knex('genres')
-                .join('movie_genres', 'genres.id', 'movie_genres.genre_id')
-                .where('movie_genres.movie_id', result.id)
-                .select('genres.id', 'genres.name');
+            const relations = await this.fetchMovieWithRelations(result.id);
+            if (!relations) return null;
 
-            // Fetch production companies
-            const productionCompanies = await this.knex('production_companies')
-                .join('movie_production_companies', 'production_companies.id', 'movie_production_companies.company_id')
-                .where('movie_production_companies.movie_id', result.id)
-                .select(
-                    'production_companies.id',
-                    'production_companies.name',
-                    'production_companies.logo_path',
-                    'production_companies.origin_country'
-                );
-
-            // Fetch external IDs
-            const externalIds = await this.knex('external_ids')
-                .where('content_type', 'movie')
-                .where('content_id', result.id)
-                .select('source', 'external_id', 'url', 'confidence_score', 'last_verified');
-
-            // Transform external IDs into the expected format
-            const transformedExternalIds = externalIds.reduce(
-                (acc, curr) => {
-                    // Map source names to their corresponding fields
-                    const sourceMap: Record<string, string> = {
-                        imdb: 'imdb_id',
-                        wikidata: 'wikidata_id',
-                        facebook: 'facebook_id',
-                        instagram: 'instagram_id',
-                        twitter: 'twitter_id',
-                    };
-                    const field = sourceMap[curr.source];
-                    if (field) {
-                        acc[field] = curr.external_id;
-                    }
-                    return acc;
-                },
-                {} as Record<string, any>
-            );
-
-            // Handle Date to string conversion for timestamps
             const normalizedResult = {
-                ...result,
-                created_at: result.created_at instanceof Date ? result.created_at.toISOString() : result.created_at,
-                updated_at: result.updated_at instanceof Date ? result.updated_at.toISOString() : result.updated_at,
-                next_update_time:
-                    result.next_update_time instanceof Date
-                        ? result.next_update_time.toISOString()
-                        : result.next_update_time,
-                last_full_update:
-                    result.last_full_update instanceof Date
-                        ? result.last_full_update.toISOString()
-                        : result.last_full_update,
-                release_date:
-                    result.release_date instanceof Date
-                        ? result.release_date.toISOString().split('T')[0]
-                        : result.release_date,
-                // Handle numeric fields that might be strings or null
-                budget: result.budget
-                    ? typeof result.budget === 'string'
-                        ? parseInt(result.budget, 10)
-                        : result.budget
-                    : 0,
-                revenue: result.revenue
-                    ? typeof result.revenue === 'string'
-                        ? parseInt(result.revenue, 10)
-                        : result.revenue
-                    : 0,
-                popularity: result.popularity
-                    ? typeof result.popularity === 'string'
-                        ? parseFloat(result.popularity)
-                        : result.popularity
-                    : 0,
-                vote_average: result.vote_average
-                    ? typeof result.vote_average === 'string'
-                        ? parseFloat(result.vote_average)
-                        : result.vote_average
-                    : 0,
-                vote_count: result.vote_count
-                    ? typeof result.vote_count === 'string'
-                        ? parseInt(result.vote_count, 10)
-                        : result.vote_count
-                    : 0,
-                // Add the fetched genres and production companies
-                genres: genres || [],
-                production_companies: productionCompanies || [],
-                ratings: result.ratings || [],
-                // Add external IDs
-                external_ids: transformedExternalIds,
+                ...this.normalizeMovieResult(result),
+                ...relations
             };
 
-            return this.schema.parse(normalizedResult);
+            try {
+                return this.schema.parse(normalizedResult);
+            } catch (error) {
+                console.error(`Validation error for movie IMDb ID ${imdbId}:`, error);
+                console.error('Failed data structure:', JSON.stringify(normalizedResult, null, 2));
+                throw error;
+            }
         } catch (error) {
             console.error('Error finding movie by IMDb ID:', error);
             return null;
@@ -436,6 +479,9 @@ export class MovieRepository extends KnexRepository<Movie, any, any, MovieQuery>
                 genres: [],
                 production_companies: [],
                 ratings: [],
+                // Initialize empty objects
+                watch_links: {},
+                external_ids: {}
             };
 
             return movie as Movie;

@@ -1,6 +1,6 @@
 import { Knex } from 'knex';
-import { scrapeRatings } from '../scraping/ratingsScraper';
-import { logger } from '../../utils/logger';
+import { scrapeRatings } from '@services/scraping/ratingsScraper';
+import logger from '@utils/logger';
 
 // Define interfaces for clarity
 interface ExternalId {
@@ -48,24 +48,27 @@ export class RatingsEnricher {
 
             // Find IMDb and Rotten Tomatoes IDs
             const imdbId = externalIds.find(id => id.source.toLowerCase() === 'imdb')?.external_id;
-            const rtUrl = externalIds.find(id => id.source.toLowerCase() === 'rottentomatoes')?.url;
-
-            if (!imdbId && !rtUrl) {
+            const rtId = externalIds.find(id => id.source.toLowerCase() === 'rottentomatoes')?.external_id;
+            let rtUrl = null;
+            if (!imdbId && !rtId) {
                 logger.info(`No IMDb ID or Rotten Tomatoes URL found for ${contentType} ${contentId}`);
                 return false;
+            }
+            if (rtId) {
+                rtUrl = `https://www.rottentomatoes.com/${rtId}`;
             }
 
             // Check if we already have ratings for this content
             const existingRatings = await this.getExistingRatings(contentType, contentId);
 
-            // If we have both IMDb and RT ratings, no need to scrape
-            if (
-                existingRatings.some(r => r.source.toLowerCase() === 'imdb') &&
-                existingRatings.some(r => r.source.toLowerCase() === 'rottentomatoes')
-            ) {
-                logger.info(`Ratings already exist for ${contentType} ${contentId}`);
-                return true;
-            }
+            // // If we have both IMDb and RT ratings, no need to scrape
+            // if (
+            //     existingRatings.some(r => r.source.toLowerCase() === 'imdb') &&
+            //     existingRatings.some(r => r.source.toLowerCase() === 'rottentomatoes')
+            // ) {
+            //     logger.info(`Ratings already exist for ${contentType} ${contentId}`);
+            //     return true;
+            // }
 
             // Scrape ratings
             const scrapedRatings = await scrapeRatings(imdbId || null, rtUrl || null);

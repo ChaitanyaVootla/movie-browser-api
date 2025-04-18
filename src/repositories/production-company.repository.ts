@@ -1,5 +1,5 @@
-import db from '../config/database';
-import { KnexRepository } from './base.repository';
+import db from '@config/database';
+import { KnexRepository } from '@repositories/base.repository';
 import {
     ProductionCompany,
     ProductionCompanySchema,
@@ -7,7 +7,7 @@ import {
     UpdateProductionCompanySchema,
     ProductionCompanyQuerySchema,
     ProductionCompanyQuery,
-} from '../schemas/production-company.schema';
+} from '@schemas/production-company.schema';
 import { z } from 'zod';
 import { Knex } from 'knex';
 

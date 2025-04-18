@@ -1,8 +1,10 @@
+import 'module-alias/register';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import movieRoutes from './routes/movie.routes';
+import logger from '@utils/logger';
+import movieRoutes from '@routes/movie.routes';
 
 // Load environment variables
 dotenv.config();
@@ -25,11 +27,11 @@ app.get('/health', (req, res) => {
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error(err.stack);
+    logger.error({ err, path: req.path }, 'Request error');
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
 // Start server
 app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+    logger.info(`Server is running on port ${port}`);
 });

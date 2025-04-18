@@ -1,6 +1,6 @@
 import { Knex } from 'knex';
-import { RatingsEnricher } from '../services/enrichment/ratingsEnricher';
-import { logger } from '../utils/logger';
+import { RatingsEnricher } from '@services/enrichment/ratingsEnricher';
+import logger from '@utils/logger';
 // Import knexfile with require to avoid TypeScript errors
 const knexConfig = require('../../knexfile');
 

@@ -1,6 +1,7 @@
 // Using require for node-fetch v2 compatibility with CommonJS
 const fetch = require('node-fetch');
 import * as cheerio from 'cheerio';
+import logger from '@utils/logger';
 
 // Define interfaces for structure and clarity
 
@@ -122,14 +123,14 @@ function parseImdbHtml(html: string, url: string): ImdbScrapeResult {
                     }
                 }
             } catch (e) {
-                console.warn(`Error parsing JSON-LD from ${url}:`, e);
+                logger.warn(`Error parsing JSON-LD from ${url}:`, e);
                 // Continue trying other script tags or fall back to selectors
             }
         });
 
         // Attempt 2: Fallback to CSS Selectors if JSON-LD failed or was incomplete
         if (rating === null || ratingCount === null) {
-            console.log(`JSON-LD parsing incomplete for IMDb ${url}, falling back to selectors.`);
+            logger.info(`JSON-LD parsing incomplete for IMDb ${url}, falling back to selectors.`);
             // Selector for rating value (e.g., "8.7")
             const ratingSelector = '[data-testid="hero-rating-bar__aggregate-rating__score"] > span:first-child';
             // Selector for rating count: Last div child within the main rating container
@@ -164,7 +165,7 @@ function parseImdbHtml(html: string, url: string): ImdbScrapeResult {
         ratingCount = ratingCount !== null && !isNaN(ratingCount) ? ratingCount : null;
 
         if (rating === null || ratingCount === null) {
-            console.warn(`Could not parse IMDb rating/count from ${url} using JSON-LD or selectors.`, {
+            logger.warn(`Could not parse IMDb rating/count from ${url} using JSON-LD or selectors.`, {
                 rating,
                 ratingCount,
             });
@@ -177,7 +178,7 @@ function parseImdbHtml(html: string, url: string): ImdbScrapeResult {
             error: null,
         };
     } catch (error: any) {
-        console.error(`Error parsing IMDb HTML from ${url}:`, error);
+        logger.error(`Error parsing IMDb HTML from ${url}:`, error);
         return { rating: null, ratingCount: null, sourceUrl: url, error: `IMDb parse failed: ${error.message}` };
     }
 }
@@ -264,12 +265,12 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
                     return false; // Exit loop
                 }
             } catch (e) {
-                console.warn(`Error parsing JSON-LD from ${url}:`, e);
+                logger.warn(`Error parsing JSON-LD from ${url}:`, e);
             }
         });
 
         // --- Attempt 2: Parse Fallback Selectors (media-scorecard, etc.) ---
-        console.log(`Checking RT selectors fallback for scores/certified/sentiment on ${url}...`);
+        logger.info(`Checking RT selectors fallback for scores/certified/sentiment on ${url}...`);
         const scoreCard = $('media-scorecard');
         if (scoreCard.length > 0) {
             const scoreElement = scoreCard.find('rt-text[slot="criticsScore"]').first();
@@ -308,7 +309,7 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
                 didFallbackParseCertifiedSentiment = true;
             }
         } else {
-            console.warn(`Could not find media-scorecard element on ${url} for fallback parsing.`);
+            logger.warn(`Could not find media-scorecard element on ${url} for fallback parsing.`);
         }
 
         // Parse fallback consensus
@@ -373,7 +374,7 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
             error: null,
         };
     } catch (error: any) {
-        console.error(`Error parsing Rotten Tomatoes HTML from ${url}:`, error);
+        logger.error(`Error parsing Rotten Tomatoes HTML from ${url}:`, error);
         return {
             critic: null,
             audience: null,
@@ -390,7 +391,7 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
  * @returns Promise<RatingsData> Object containing scraped data from both sources.
  */
 export async function scrapeRatings(imdbId: string | null, rottenTomatoesUrl: string | null): Promise<RatingsData> {
-    const results: RatingsData = {
+    const result: RatingsData = {
         imdb: null,
         rottenTomatoes: null,
     };
@@ -398,13 +399,13 @@ export async function scrapeRatings(imdbId: string | null, rottenTomatoesUrl: st
     if (imdbId) {
         const imdbUrl = `https://www.imdb.com/title/${imdbId}/`;
         try {
-            console.log(`Fetching IMDb page: ${imdbUrl}`);
+            logger.info(`Fetching IMDb page: ${imdbUrl}`);
             const imdbHtml = await fetchHtml(imdbUrl);
-            console.log(`Parsing IMDb page for ${imdbId}`);
-            results.imdb = parseImdbHtml(imdbHtml, imdbUrl);
+            logger.info(`Parsing IMDb page for ${imdbId}`);
+            result.imdb = parseImdbHtml(imdbHtml, imdbUrl);
         } catch (error: any) {
-            console.error(`Failed to scrape IMDb (${imdbId}): ${error.message}`);
-            results.imdb = {
+            logger.error(`Failed to scrape IMDb (${imdbId}): ${error.message}`);
+            result.imdb = {
                 rating: null,
                 ratingCount: null,
                 sourceUrl: imdbUrl,
@@ -412,18 +413,18 @@ export async function scrapeRatings(imdbId: string | null, rottenTomatoesUrl: st
             };
         }
     } else {
-        console.log('No IMDb ID provided, skipping IMDb scrape.');
+        logger.info('No IMDb ID provided, skipping IMDb scrape.');
     }
 
     if (rottenTomatoesUrl) {
         try {
-            console.log(`Fetching Rotten Tomatoes page: ${rottenTomatoesUrl}`);
+            logger.info(`Fetching Rotten Tomatoes page: ${rottenTomatoesUrl}`);
             const rtHtml = await fetchHtml(rottenTomatoesUrl);
-            console.log(`Parsing Rotten Tomatoes page: ${rottenTomatoesUrl}`);
-            results.rottenTomatoes = parseRottenTomatoesHtml(rtHtml, rottenTomatoesUrl);
+            logger.info(`Parsing Rotten Tomatoes page: ${rottenTomatoesUrl}`);
+            result.rottenTomatoes = parseRottenTomatoesHtml(rtHtml, rottenTomatoesUrl);
         } catch (error: any) {
-            console.error(`Failed to scrape Rotten Tomatoes (${rottenTomatoesUrl}): ${error.message}`);
-            results.rottenTomatoes = {
+            logger.error(`Failed to scrape Rotten Tomatoes (${rottenTomatoesUrl}): ${error.message}`);
+            result.rottenTomatoes = {
                 critic: null,
                 audience: null,
                 sourceUrl: rottenTomatoesUrl,
@@ -431,10 +432,10 @@ export async function scrapeRatings(imdbId: string | null, rottenTomatoesUrl: st
             };
         }
     } else {
-        console.log('No Rotten Tomatoes URL provided, skipping RT scrape.');
+        logger.info('No Rotten Tomatoes URL provided, skipping RT scrape.');
     }
 
-    return results;
+    return result;
 }
 
 /**
@@ -463,7 +464,7 @@ export const handler = async (event: APIGatewayEvent): Promise<APIGatewayRespons
         const result = await scrapeRatings(input.imdbId, input.rottenTomatoesUrl);
 
         // Log the result for monitoring
-        console.log('Scraping completed successfully:', {
+        logger.info('Scraping completed successfully:', {
             imdbId: input.imdbId,
             rtUrl: input.rottenTomatoesUrl,
             result,
@@ -478,7 +479,7 @@ export const handler = async (event: APIGatewayEvent): Promise<APIGatewayRespons
             body: JSON.stringify(result),
         };
     } catch (error: any) {
-        console.error('Error in Lambda handler:', error);
+        logger.error('Error in Lambda handler:', error);
         return {
             statusCode: 500,
             headers: {
@@ -504,17 +505,17 @@ async function testScrape() {
     //  const imdbId = 'tt15398776';
     //  const rottenTomatoesUrl = 'https://www.rottentomatoes.com/m/oppenheimer_2023';
 
-    console.log(`--- Starting local test scrape for IMDb ID: ${imdbId}, RT URL: ${rottenTomatoesUrl} ---`);
+    logger.info(`--- Starting local test scrape for IMDb ID: ${imdbId}, RT URL: ${rottenTomatoesUrl} ---`);
     const results = await scrapeRatings(imdbId, rottenTomatoesUrl);
-    console.log('--- Local test scrape finished ---');
-    console.log('Results:');
-    console.log(JSON.stringify(results, null, 2));
+    logger.info('--- Local test scrape finished ---');
+    logger.info('Results:');
+    logger.info(JSON.stringify(results, null, 2));
 }
 
 // Check if the script is being run directly (e.g., `node dist/services/scraping/ratingsScraper.js`)
 if (require.main === module) {
     testScrape().catch(error => {
-        console.error('Local test scrape failed:', error);
+        logger.error('Local test scrape failed:', error);
         process.exit(1);
     });
 }

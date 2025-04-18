@@ -1,3 +1,4 @@
+import express from 'express';
 import { Router } from 'express';
 import {
     getMovies,
@@ -5,7 +6,7 @@ import {
     getMovieByTmdbId,
     getPopularMovies,
     getMoviesByVoteCount,
-} from '../controllers/movie.controller';
+} from '@controllers/movie.controller';
 
 const router = Router();
 

@@ -24,17 +24,18 @@ const CastMemberSchema = z.object({
     order: z.number(),
 });
 
-// Director schema
-const DirectorSchema = z.object({
+// Crew member schema
+const CrewMemberSchema = z.object({
     id: z.number(),
     name: z.string(),
+    job: z.string(),
     profile_path: z.string().nullable(),
 });
 
 // Credits schema
 const CreditsSchema = z.object({
-    director: DirectorSchema.nullable(),
     cast: z.array(CastMemberSchema).max(10),
+    crew: z.array(CrewMemberSchema),
 });
 
 // External IDs schema
@@ -61,10 +62,28 @@ const RatingSchema = z.object({
     source: z.string(),
     rating: z.number().nullable(),
     rating_count: z.number().nullable(),
-    review_count: z.number().nullable(),
     consensus: z.string().nullable(),
+    rating_type: z.string(),
     last_updated: z.string().nullable(),
 });
+
+// Watch Link schema
+const WatchLinkSchema = z.object({
+    provider_id: z.number(),
+    provider_name: z.string(),
+    provider_logo: z.string().nullable(),
+    link_type: z.string(),
+    url: z.string(),
+    price: z.number().nullable().optional(),
+    raw_price: z.string().nullable().optional(),
+    is_subscription: z.boolean().optional(),
+    is_free: z.boolean().optional(),
+    currency: z.string().nullable().optional(),
+    last_verified: z.string().nullable().optional()
+});
+
+// Watch Links by Country schema
+const WatchLinksByCountrySchema = z.record(z.string(), z.array(WatchLinkSchema));
 
 // Accept any string as a URL, and also allow null
 const urlSchema = z.string().nullable().optional();
@@ -86,6 +105,8 @@ const BaseMovieSchema = TMDBMovieSchema.extend({
     updated_at: z.string().nullable().optional(), // ISO date string
     // Add ratings which isn't in TMDB schema
     ratings: z.array(RatingSchema).nullable().optional(),
+    // Add watch links grouped by country
+    watch_links: WatchLinksByCountrySchema.nullable().optional(),
     // Add external IDs
     external_ids: ExternalIdsSchema.optional(),
     // Override homepage with more lenient validation

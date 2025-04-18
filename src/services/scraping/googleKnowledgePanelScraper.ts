@@ -1,6 +1,6 @@
 import chromium from 'chrome-aws-lambda';
 import type { APIGatewayEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { logger } from '../../utils/logger';
+import logger from '@utils/logger';
 import type { Page, Browser } from 'puppeteer-core';
 
 const DIRECTOR_SELECTOR = '[data-attrid="kc:/film/film:director"]';
@@ -163,6 +163,11 @@ export class GoogleKnowledgePanelScraper {
         await this.page!.waitForSelector('g-expandable-content.rXtXab', {
             timeout: 2000,
         });
+        // Wait up to 500ms for a price DOM to appear
+        await Promise.race([
+            this.page!.waitForSelector('div.rsj3fb', { timeout: 500 }).catch(() => {}),
+            this.page!.waitForSelector('div.ZYHQ7e', { timeout: 500 }).catch(() => {}),
+        ]);
 
         const ottDOMContainer = await this.page!.$('g-expandable-content.rXtXab');
         if (!ottDOMContainer) return watchOptions;
