@@ -15,7 +15,7 @@ export class GoogleKnowledgePanelEnricher {
         this.lambdaService = new LambdaService();
     }
 
-    async enrichContent(contentType: string, contentId: number, countryCode: string): Promise<boolean> {
+    async enrichContent(contentType: string, contentId: number, countryCode?: string): Promise<boolean> {
         try {
             // Get content details
             const content = await this.knex(contentType === 'movie' ? 'movies' : 'tv_series')
@@ -27,17 +27,21 @@ export class GoogleKnowledgePanelEnricher {
                 return false;
             }
 
-            // Get country info
-            const countryInfo = getCountryByCode(countryCode) || getDefaultCountry();
-            logger.debug(`Using country: ${countryInfo.name} (${countryInfo.code}) with currency: ${countryInfo.currency}`);
+            // Get country info if countryCode is provided
+            const countryInfo = countryCode ? (getCountryByCode(countryCode) || getDefaultCountry()) : getDefaultCountry();
+            if (countryCode) {
+                logger.debug(`Using country: ${countryInfo.name} (${countryInfo.code}) with currency: ${countryInfo.currency}`);
+            }
 
             // Create search string
             const searchString = `${content.title || content.name} ${contentType === 'movie' ? 'movie' : 'tv show'}`;
 
-            logger.info(`Starting Google scraper for "${searchString}" in region ${countryCode}`);
+            // Skip region for India, make it optional otherwise
+            const region = countryCode?.toLowerCase() === 'in' ? undefined : countryCode;
+            logger.info(`Starting Google scraper for "${searchString}"${region ? ` in region ${region}` : ''}`);
             
             // Use LambdaService to invoke the Google scraper
-            const result = await this.lambdaService.invokeGoogleScraper(searchString, countryCode);
+            const result = await this.lambdaService.invokeGoogleScraper(searchString, region);
 
             logger.trace(result, 'Received scraper result');
 

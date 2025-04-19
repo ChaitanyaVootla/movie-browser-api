@@ -1,7 +1,7 @@
 // Using require for node-fetch v2 compatibility with CommonJS
 const fetch = require('node-fetch');
 import * as cheerio from 'cheerio';
-import logger from '@utils/logger';
+import logger from './logger';
 
 // Define interfaces for structure and clarity
 

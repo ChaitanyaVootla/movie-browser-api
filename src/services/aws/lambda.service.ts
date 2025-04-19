@@ -46,15 +46,17 @@ export class LambdaService {
         }
     }
 
-    async invokeGoogleScraper(searchString: string, region: string) {
+    async invokeGoogleScraper(searchString: string, region?: string) {
         try {
             // Use the specific endpoint from the config if available
             const endpoint = this.endpoints.get('google') || `${this.apiEndpoint}/scrape/google`;
             
-            const response = await axios.post(endpoint, {
-                searchString,
-                region,
-            });
+            const payload: { searchString: string; region?: string } = { searchString };
+            if (region && region.toLowerCase() !== 'in') {
+                payload.region = region;
+            }
+            
+            const response = await axios.post(endpoint, payload);
 
             return response.data;
         } catch (error) {

@@ -12,3 +12,4 @@ We use the following libraries
 - knex to communicate with postgresql
 - zod for type validation
 - serverless to deploy lambda and api gateway to AWS
+- pino for logging (always use pino logger from [logger.ts](mdc:src/utils/logger.ts), do not user console.log)

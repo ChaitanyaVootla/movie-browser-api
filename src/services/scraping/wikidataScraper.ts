@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import logger from './logger';
 
 /**
  * Fetches external IDs for a movie from Wikidata using its Wikidata ID (e.g., Q12345).

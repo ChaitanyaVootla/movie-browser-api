@@ -40,41 +40,43 @@ package:
     - '!node_modules/puppeteer/.local-chromium/**'
     - 'node_modules/chrome-aws-lambda/**'
     - 'node_modules/puppeteer-core/**'
+    - 'node_modules/puppeteer-extra/**'
+    - 'node_modules/puppeteer-extra-plugin-stealth/**'
 
 functions:
-  scrapeRatings:
-    handler: dist/services/scraping/ratingsScraper.handler # Path to the compiled handler function
-    memorySize: 1024 # Adjust memory as needed (start small)
-    timeout: 60 # Adjust timeout (in seconds)
-    events:
-      - http:
-          path: scrape
-          method: post
-          cors: true
-          request:
-            schemas:
-              application/json:
-                schema:
-                  type: object
-                  properties:
-                    imdbId:
-                      type: string
-                      description: IMDb ID (e.g., tt0111161)
-                    rottenTomatoesUrl:
-                      type: string
-                      description: Full Rotten Tomatoes URL
-                  anyOf:
-                    - required: ["imdbId"]
-                    - required: ["rottenTomatoesUrl"]
-                    - required: ["imdbId", "rottenTomatoesUrl"]
+  # scrapeRatings:
+  #   handler: dist/services/scraping/ratingsScraper.handler # Path to the compiled handler function
+  #   memorySize: 1024 # Adjust memory as needed (start small)
+  #   timeout: 10 # Adjust timeout (in seconds)
+  #   events:
+  #     - http:
+  #         path: scrape
+  #         method: post
+  #         cors: true
+  #         request:
+  #           schemas:
+  #             application/json:
+  #               schema:
+  #                 type: object
+  #                 properties:
+  #                   imdbId:
+  #                     type: string
+  #                     description: IMDb ID (e.g., tt0111161)
+  #                   rottenTomatoesUrl:
+  #                     type: string
+  #                     description: Full Rotten Tomatoes URL
+  #                 anyOf:
+  #                   - required: ["imdbId"]
+  #                   - required: ["rottenTomatoesUrl"]
+  #                   - required: ["imdbId", "rottenTomatoesUrl"]
 
   scrapeGoogleKnowledgePanel:
     handler: dist/services/scraping/googleKnowledgePanelScraper.handler
-    runtime: nodejs14.x  # Specific runtime for Google scraper
-    memorySize: 1000  # Increased memory for Puppeteer
-    timeout: 30     # Increased timeout for scraping
+    runtime: nodejs22.x
+    memorySize: 1000
+    timeout: 30
     layers:
-      - arn:aws:lambda:ap-south-2:891564319516:layer:LambdaInsightsExtension:10
+      - arn:aws:lambda:ap-south-2:620733889764:layer:chromium133:1
     environment:
       CHROME_AWS_LAMBDA_CHROME_EXECUTABLE_PATH: /opt/chromium/chromium
     events:
@@ -89,7 +91,6 @@ functions:
                   type: object
                   required:
                     - searchString
-                    - region
                   properties:
                     searchString:
                       type: string

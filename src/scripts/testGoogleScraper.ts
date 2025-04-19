@@ -5,7 +5,7 @@ import logger from '@utils/logger';
 const testEvent = {
     body: JSON.stringify({
         searchString: 'The Shawshank Redemption',
-        countryCode: 'US',
+        // countryCode is now optional
     }),
     headers: {
         'Content-Type': 'application/json',
