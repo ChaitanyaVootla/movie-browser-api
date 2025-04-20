@@ -19,12 +19,12 @@ type TMDBProductionCompany = z.infer<typeof TMDBProductionCompanySchema>;
 
 // --- Global Error Handlers ---
 process.on('uncaughtException', error => {
-    logger.error('!!! Uncaught Exception:', error);
+    logger.error(error, '!!! Uncaught Exception:');
     process.exit(1); // Exit process on unhandled exceptions
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    logger.error('!!! Unhandled Rejection at:', promise, 'reason:', reason);
+    logger.error(reason, '!!! Unhandled Rejection at:', promise);
     // Optionally exit or log, but be cautious as multiple rejections can occur
     // process.exit(1);
 });
@@ -160,33 +160,37 @@ async function processSingleMovie(
                 const externalIds = Object.entries(movieDetails.external_ids!)
                     .filter(([_, value]) => value !== null && value !== undefined && String(value).trim() !== '')
                     .map(([source, external_id]) => {
-                        const sourceMap: Record<string, string> = {
-                            imdb_id: 'imdb',
-                            wikidata_id: 'wikidata',
-                            facebook_id: 'facebook',
-                            instagram_id: 'instagram',
-                            twitter_id: 'twitter',
-                        };
+                        // Transform the source key by removing '_id' suffix if present
+                        // E.g., 'imdb_id' becomes 'imdb', but 'tiktok_account' stays 'tiktok_account'
+                        const normalizedSource = source.endsWith('_id') 
+                            ? source.slice(0, -3) // Remove '_id' suffix
+                            : source;
+                            
                         return {
                             content_type: 'movie',
                             content_id: dbMovieId,
-                            source: sourceMap[source] || source,
+                            source: normalizedSource,
                             external_id: String(external_id),
                             confidence_score: 1.0,
                             last_verified: new Date().toISOString(),
                         };
                     });
 
-                await trx('external_ids').where('content_type', 'movie').where('content_id', dbMovieId).delete();
-
                 if (externalIds.length > 0) {
+                    // Delete existing external IDs for this movie
+                    await trx('external_ids')
+                        .where('content_type', 'movie')
+                        .where('content_id', dbMovieId)
+                        .delete();
+                    
+                    // Insert the new external IDs
                     await trx('external_ids').insert(externalIds);
                 }
             });
         }
     } catch (error) {
         // Keep this error log
-        logger.error(`[${movieId}] Error during processing steps:`, error);
+        logger.error(error, `[${movieId}] Error during processing steps:`);
         throw error;
     }
 }
@@ -201,8 +205,7 @@ async function populateMovies(options: PopulateOptions) {
     const genreCache = new Map<string, Genre>();
     const companyCache = new Map<string, ProductionCompany>();
 
-    const BATCH_SIZE = 100;
-    const CONCURRENCY_LIMIT = 100; // Increase TMDB concurrency limit
+    const CONCURRENCY_LIMIT = 100; // Maximum TMDB API concurrency
 
     let totalSuccessCount = 0;
     let totalFailureCount = 0;
@@ -231,14 +234,13 @@ async function populateMovies(options: PopulateOptions) {
             logger.info(`Filtered out ${originalCount - newCount} existing movies. Processing ${newCount} new movies.`);
         }
 
-        const totalMoviesToProcess = allMovieIds.length;
+        let totalMoviesToProcess = allMovieIds.length;
         // Apply limit *after* filtering if createOnly is set
         const scriptLimit = options.limit;
         if (scriptLimit !== undefined && scriptLimit > 0 && totalMoviesToProcess > scriptLimit) {
             allMovieIds = allMovieIds.slice(0, scriptLimit);
-            const limitedTotal = allMovieIds.length;
-            logger.info(`Applying limit: processing ${limitedTotal} movies.`);
-            const totalMoviesToProcess = limitedTotal;
+            totalMoviesToProcess = allMovieIds.length;
+            logger.info(`Applying limit: processing ${totalMoviesToProcess} movies.`);
         }
 
         if (totalMoviesToProcess === 0) {
@@ -246,26 +248,26 @@ async function populateMovies(options: PopulateOptions) {
             return; // Exit early if no movies left to process
         }
 
-        logger.info(
-            `Processing ${totalMoviesToProcess} movies in batches of ${BATCH_SIZE} (concurrency: ${CONCURRENCY_LIMIT})...`
-        );
+        logger.info(`Processing ${totalMoviesToProcess} movies with ${CONCURRENCY_LIMIT} concurrent API calls...`);
 
-        // Use async.eachOfLimit for batches
-        await async.eachOfLimit(
-            Array.from({ length: Math.ceil(totalMoviesToProcess / BATCH_SIZE) }),
-            1,
-            async (_, batchIndex) => {
-                const numericBatchIndex = batchIndex as number;
-                const startIndex = numericBatchIndex * BATCH_SIZE;
-                const batchIds = allMovieIds.slice(startIndex, Math.min(startIndex + BATCH_SIZE, totalMoviesToProcess));
-                const batchNumber = (batchIndex as number) + 1;
-                const totalBatches = Math.ceil(totalMoviesToProcess / BATCH_SIZE);
+        // Create chunks of movie IDs, each with CONCURRENCY_LIMIT size
+        const chunks = [];
+        for (let i = 0; i < totalMoviesToProcess; i += CONCURRENCY_LIMIT) {
+            chunks.push(allMovieIds.slice(i, Math.min(i + CONCURRENCY_LIMIT, totalMoviesToProcess)));
+        }
 
-                logger.info(`\n--- Processing Batch ${batchNumber}/${totalBatches} (${batchIds.length} movies) ---`);
-                const batchStartTime = Date.now();
+        logger.info(`Split processing into ${chunks.length} chunks of up to ${CONCURRENCY_LIMIT} movies each.`);
 
-                // Use async.mapLimit again for processing movies within the batch
-                const results = await async.mapLimit(batchIds, CONCURRENCY_LIMIT, async (movieId: number) => {
+        // Process each chunk sequentially
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+            const chunk = chunks[chunkIndex];
+            const chunkStartTime = Date.now();
+            let chunkSuccessCount = 0;
+            let chunkFailureCount = 0;
+
+            // Process all movies in this chunk concurrently
+            const results = await Promise.all(
+                chunk.map(async (movieId) => {
                     try {
                         await processSingleMovie(
                             movieId,
@@ -276,68 +278,66 @@ async function populateMovies(options: PopulateOptions) {
                             genreCache,
                             companyCache
                         );
-                        return { status: 'fulfilled', movieId: movieId };
+                        return { status: 'fulfilled', movieId };
                     } catch (error) {
-                        // Catch errors here to allow mapLimit to continue
-                        return { status: 'rejected', movieId: movieId, reason: error };
+                        logger.error(error, `[${movieId}] Error during processing:`);
+                        return { status: 'rejected', movieId, reason: error };
                     }
-                });
+                })
+            );
 
-                // Tally results (works with mapLimit callback format)
-                let batchSuccessCount = 0;
-                let batchFailureCount = 0;
-                results.forEach(result => {
-                    if (result.status === 'fulfilled') {
-                        batchSuccessCount++;
-                    } else {
-                        batchFailureCount++;
-                        // Log the reason for rejection from the mapLimit result
-                        logger.error(`[${result.movieId}] Error during processing steps:`, result.reason);
-                    }
-                });
-
-                totalSuccessCount += batchSuccessCount;
-                totalFailureCount += batchFailureCount;
-                totalProcessed += batchIds.length;
-                const batchEndTime = Date.now();
-                const batchDuration = ((batchEndTime - batchStartTime) / 1000).toFixed(2);
-                logger.info(
-                    `Batch ${batchNumber} Summary: ${batchSuccessCount} succeeded, ${batchFailureCount} failed in ${batchDuration}s.`
-                );
-
-                // --- ETA Calculation ---
-                const elapsedTime = Date.now() - scriptStartTime;
-                const moviesPerMillisecond = totalProcessed / elapsedTime;
-                const remainingMovies = totalMoviesToProcess - totalProcessed;
-                const estimatedRemainingTimeMs = remainingMovies / moviesPerMillisecond;
-
-                if (totalProcessed > 0 && isFinite(estimatedRemainingTimeMs)) {
-                    // Avoid division by zero / NaN
-                    const estimatedRemainingSeconds = Math.round(estimatedRemainingTimeMs / 1000);
-                    const hours = Math.floor(estimatedRemainingSeconds / 3600);
-                    const minutes = Math.floor((estimatedRemainingSeconds % 3600) / 60);
-                    const seconds = estimatedRemainingSeconds % 60;
-                    const etaString = `${hours}h ${minutes}m ${seconds}s`;
-                    logger.info(
-                        `Overall Progress: ${totalProcessed}/${totalMoviesToProcess} movies. Total Failures: ${totalFailureCount}. Cache Hits (G/C): ${genreCache.size}/${companyCache.size}. ETA: ${etaString}`
-                    );
+            // Count successes and failures in this chunk
+            results.forEach(result => {
+                if (result.status === 'fulfilled') {
+                    chunkSuccessCount++;
                 } else {
-                    logger.info(
-                        `Overall Progress: ${totalProcessed}/${totalMoviesToProcess} movies. Total Failures: ${totalFailureCount}. Cache Hits (G/C): ${genreCache.size}/${companyCache.size}. ETA: Calculating...`
-                    );
+                    chunkFailureCount++;
                 }
-                // -----------------------
-            }
-        );
+            });
+
+            // Update totals
+            totalSuccessCount += chunkSuccessCount;
+            totalFailureCount += chunkFailureCount;
+            totalProcessed += chunk.length;
+
+            // Calculate and show progress after this chunk
+            const chunkEndTime = Date.now();
+            const chunkDurationMs = chunkEndTime - chunkStartTime;
+            const elapsedTime = chunkEndTime - scriptStartTime;
+            const moviesPerMillisecond = totalProcessed / elapsedTime;
+            const remainingMovies = totalMoviesToProcess - totalProcessed;
+            const estimatedRemainingTimeMs = remainingMovies / moviesPerMillisecond;
+            
+            const chunkDurationSec = (chunkDurationMs / 1000).toFixed(2);
+            const etaString = formatTimeString(estimatedRemainingTimeMs);
+
+            logger.info(
+                `Chunk ${chunkIndex + 1}/${chunks.length} complete: ${chunkSuccessCount} succeeded, ${chunkFailureCount} failed in ${chunkDurationSec}s. ` +
+                `Overall Progress: ${totalProcessed}/${totalMoviesToProcess} (${(totalProcessed / totalMoviesToProcess * 100).toFixed(1)}%). ` +
+                `Cache Hits (G/C): ${genreCache.size}/${companyCache.size}. ETA: ${etaString}`
+            );
+        }
 
         logger.info(`\n=== Population Complete ===`);
         logger.info(`Total movies processed: ${totalProcessed}`);
         logger.info(`Total successes: ${totalSuccessCount}`);
         logger.info(`Total failures: ${totalFailureCount}`);
     } catch (error) {
-        logger.error('Critical error during movie population setup or batch processing:', error);
+        logger.error(error, 'Critical error during movie population setup or processing:');
         process.exit(1);
     }
+}
+
+// Helper function to format time string
+function formatTimeString(milliseconds: number): string {
+    if (!isFinite(milliseconds)) return "Calculating...";
+    
+    const seconds = Math.round(milliseconds / 1000);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    
+    return `${hours}h ${minutes}m ${remainingSeconds}s`;
 }
 
 async function main() {
@@ -349,7 +349,7 @@ async function main() {
         // Call the local populateMovies function with parsed options
         await populateMovies(options);
     } catch (error) {
-        logger.error('Unhandled error in main execution:', error);
+        logger.error(error, 'Unhandled error in main execution:');
         process.exitCode = 1; // Set exit code to indicate failure
     } finally {
         // Ensure the database connection pool is destroyed

@@ -225,7 +225,6 @@ export class MovieRepository extends KnexRepository<Movie, any, any, MovieQuery>
 
     async findByTmdbId(tmdbId: number, trx?: Knex.Transaction): Promise<Movie | null> {
         try {
-            logger.debug(`Finding movie by TMDB ID ${tmdbId}`);
             const query = this.knex(this.tableName).where('tmdb_id', tmdbId).first();
             const result = await (trx ? query.transacting(trx) : query);
 

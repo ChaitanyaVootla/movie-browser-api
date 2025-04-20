@@ -1,4 +1,8 @@
-exports.up = async function(knex) {
+/**
+ * @param { import("knex").Knex } knex
+ * @returns { Promise<void> }
+ */
+exports.up = async function (knex) {
   // Create movies table
   await knex.schema.createTable('movies', (table) => {
     table.increments('id').primary();
@@ -17,10 +21,11 @@ exports.up = async function(knex) {
     table.integer('vote_count').nullable();
     table.boolean('adult').defaultTo(false);
     table.string('status', 50).nullable();
-    table.string('homepage', 255).nullable();
+    table.text('homepage').nullable();
     table.string('poster_path', 255).nullable();
     table.string('backdrop_path', 255).nullable();
     table.string('original_language', 10).nullable();
+    table.jsonb('credits').nullable().comment('Stores director and top 10 cast members');
     table.timestamp('next_update_time').nullable();
     table.string('update_frequency').nullable();
     table.timestamp('last_full_update').nullable();
@@ -56,13 +61,13 @@ exports.up = async function(knex) {
     table.primary(['movie_id', 'company_id']);
   });
 
-  // Create external_ids table
+  // Create external_ids table with 255 char length for external_id (per 20250408063206 migration)
   await knex.schema.createTable('external_ids', (table) => {
     table.increments('id').primary();
     table.string('content_type', 10).notNullable();
     table.integer('content_id').notNullable();
     table.string('source', 50).notNullable();
-    table.string('external_id', 100).notNullable();
+    table.string('external_id', 255).notNullable(); // Increased from 100 to 255 in 20250408063206
     table.string('url', 255).nullable();
     table.decimal('confidence_score', 3, 2).nullable();
     table.timestamp('last_verified').nullable();
@@ -71,20 +76,21 @@ exports.up = async function(knex) {
     table.unique(['content_type', 'content_id', 'source', 'external_id']);
   });
 
-  // Create ratings table
+  // Create ratings table with updated schema (per 20250716100000 migration)
   await knex.schema.createTable('ratings', (table) => {
     table.increments('id').primary();
     table.string('content_type', 10).notNullable();
     table.integer('content_id').notNullable();
     table.string('source', 50).notNullable();
+    table.string('rating_type', 20).notNullable().defaultTo('main').comment('e.g., main, critic, audience');
     table.decimal('rating', 3, 1).nullable();
     table.integer('rating_count').nullable();
-    table.integer('review_count').nullable();
+    table.jsonb('details').nullable().comment('Store source-specific extras (certified, sentiment, etc.)');
     table.text('consensus').nullable();
     table.timestamp('last_updated').nullable();
     table.timestamp('created_at').defaultTo(knex.fn.now());
     table.timestamp('updated_at').defaultTo(knex.fn.now());
-    table.unique(['content_type', 'content_id', 'source']);
+    table.unique(['content_type', 'content_id', 'source', 'rating_type'], { indexName: 'ratings_uq_content_source_type' });
   });
 
   // Create watch_providers table
@@ -95,7 +101,7 @@ exports.up = async function(knex) {
     table.integer('priority').nullable();
   });
 
-  // Create watch_links table
+  // Create watch_links table with price details (per 20240601000000 migration)
   await knex.schema.createTable('watch_links', (table) => {
     table.increments('id').primary();
     table.string('content_type', 10).notNullable();
@@ -106,6 +112,9 @@ exports.up = async function(knex) {
     table.string('url', 255).nullable();
     table.decimal('price', 10, 2).nullable();
     table.string('currency', 3).nullable();
+    table.string('raw_price').nullable(); // Added in 20240601000000
+    table.boolean('is_subscription').defaultTo(false); // Added in 20240601000000
+    table.boolean('is_free').defaultTo(false); // Added in 20240601000000
     table.timestamp('last_verified').nullable();
     table.timestamp('created_at').defaultTo(knex.fn.now());
     table.timestamp('updated_at').defaultTo(knex.fn.now());
@@ -130,7 +139,11 @@ exports.up = async function(knex) {
   await knex.schema.raw('CREATE INDEX idx_watch_links_provider ON watch_links(provider_id)');
 };
 
-exports.down = async function(knex) {
+/**
+ * @param { import("knex").Knex } knex
+ * @returns { Promise<void> }
+ */
+exports.down = async function (knex) {
   // Drop tables in reverse order
   await knex.schema.dropTableIfExists('watch_links');
   await knex.schema.dropTableIfExists('watch_providers');

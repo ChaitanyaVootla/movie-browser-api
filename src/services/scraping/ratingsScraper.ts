@@ -27,6 +27,7 @@ interface RtAudienceData {
     ratingCount: number | null; // Parsed audience rating/review count (numeric)
     certified: boolean | null; // Verified audience status?
     sentiment: string | null; // e.g., "POSITIVE", "NEGATIVE"
+    consensus?: string | null; // Audience consensus text
 }
 
 interface RtScrapeResult {
@@ -198,6 +199,7 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
         let jsonCriticScore: number | null = null;
         let jsonAudienceScore: number | null = null;
         let jsonConsensus: string | null = null;
+        let jsonAudienceConsensus: string | null = null;
         let jsonAudienceReviewCount: number | null = null;
         let jsonCriticReviewCount: number | null = null;
 
@@ -205,6 +207,7 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
         let fallbackCriticScore: number | null = null;
         let fallbackAudienceScore: number | null = null;
         let fallbackConsensus: string | null = null;
+        let fallbackAudienceConsensus: string | null = null;
         let fallbackAudienceReviewCount: number | null = null;
         let fallbackCriticReviewCount: number | null = null;
         let fallbackCriticCertified: boolean | null = null;
@@ -323,6 +326,17 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
                 .replace(/^Critics Consensus:\s*/i, '');
         }
 
+        // Parse audience consensus
+        fallbackAudienceConsensus =
+            $('#audience-consensus p').first().text().trim() ||
+            $('[data-qa="audience-consensus"] p').first().text().trim();
+        if (!fallbackAudienceConsensus) {
+            fallbackAudienceConsensus = $('#audience-consensus .consensus-text')
+                .text()
+                .trim()
+                .replace(/^Audience Says:\s*/i, '');
+        }
+
         // --- Decision Logic & Structure Assembly ---
         let finalCriticScore: number | null;
         if (iconCriticScore !== null) {
@@ -336,6 +350,7 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
         const finalAudienceScore = jsonAudienceScore ?? fallbackAudienceScore;
         const finalAudienceCount = jsonAudienceReviewCount ?? fallbackAudienceReviewCount;
         const finalConsensus = jsonConsensus ?? fallbackConsensus;
+        const finalAudienceConsensus = jsonAudienceConsensus ?? fallbackAudienceConsensus;
         const finalCriticCertified = fallbackCriticCertified;
         const finalCriticSentiment = fallbackCriticSentiment;
         const finalAudienceCertified = fallbackAudienceCertified;
@@ -362,6 +377,7 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
             ratingCount: validatedAudienceCount,
             certified: finalAudienceCertified,
             sentiment: finalAudienceSentiment,
+            consensus: finalAudienceConsensus || null,
         };
 
         return {
@@ -369,7 +385,9 @@ function parseRottenTomatoesHtml(html: string, url: string): RtScrapeResult {
                 criticData.score !== null || criticData.ratingCount !== null || criticData.consensus !== null
                     ? criticData
                     : null,
-            audience: audienceData.score !== null || audienceData.ratingCount !== null ? audienceData : null,
+            audience: audienceData.score !== null || audienceData.ratingCount !== null || audienceData.consensus !== null
+                    ? audienceData
+                    : null,
             sourceUrl: url,
             error: null,
         };

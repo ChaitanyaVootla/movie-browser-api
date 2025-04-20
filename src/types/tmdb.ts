@@ -23,7 +23,7 @@ export const TMDBCastMemberSchema = z.object({
     order: z.number(),
     credit_id: z.string(),
     cast_id: z.number().optional(),
-    known_for_department: z.string().optional(),
+    known_for_department: z.string().nullable().optional(),
 });
 
 // Crew member schema
@@ -73,7 +73,7 @@ export const TMDBMovieSchema = z.object({
     tagline: z.string().nullable().optional(),
     budget: z.number().nullable().optional(),
     revenue: z.number().nullable().optional(),
-    tmdb_id: z.number().int().positive(),
+    tmdb_id: z.number().int().positive().optional(),
     imdb_id: z.string().nullable().optional(),
     genres: z.array(TMDBGenreSchema).optional().default([]),
     production_companies: z.array(TMDBProductionCompanySchema).optional().default([]),

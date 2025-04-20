@@ -44,4 +44,14 @@ here is the full list:
   - No parameters
   - Example: `npx ts-node src/scripts/updateApiConfig.ts`
 
+- `importWikidataExternalIds.ts` - Batch fetches all movie external IDs from Wikidata and imports them into the database
+  - Parameters:
+    - `--output <path>` - Path to save the JSON file
+    - `--limit <number>` - Limit the number of movies to fetch from Wikidata
+    - `--skip-fetch` - Skip fetching from Wikidata (use existing file)
+    - `--force` - Force update existing external IDs
+    - `--batch-size <number>` - Number of movies to process in each batch (default: 100)
+    - `--dry-run` - Run without making any changes to the database
+  - Example: `npx ts-node src/scripts/importWikidataExternalIds.ts --limit 1000 --dry-run`
+
 ALWAYS update this list when changing or removing or adding a new script

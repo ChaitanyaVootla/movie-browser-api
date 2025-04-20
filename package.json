@@ -35,10 +35,13 @@
         "migrate:make": "knex migrate:make",
         "seed": "knex seed:run",
         "seed:make": "knex seed:make",
-        "populate:movies": "ts-node -r tsconfig-paths/register src/scripts/populateMovies.ts | pino-pretty",
-        "populate:movies:dev": "ts-node-dev -r tsconfig-paths/register --transpile-only src/scripts/populateMovies.ts | pino-pretty",
+        "populate:movies": "ts-node -r tsconfig-paths/register src/scripts/populateMovies.ts --create-only | pino-pretty",
+        "populate:wikidata:dry": "ts-node -r tsconfig-paths/register src/scripts/importWikidataExternalIds.ts --dry-run | pino-pretty",
+        "populate:wikidata": "ts-node -r tsconfig-paths/register src/scripts/importWikidataExternalIds.ts | pino-pretty",
         "check:movie": "ts-node -r tsconfig-paths/register src/scripts/checkMovieRelations.ts | pino-pretty",
-        "enrich:single": "ts-node -r tsconfig-paths/register src/scripts/enrichSingleContent.ts"
+        "enrich:single": "ts-node -r tsconfig-paths/register src/scripts/enrichSingleContent.ts | pino-pretty",
+        "enrich:ratings": "ts-node -r tsconfig-paths/register src/scripts/enrichRatings.ts | pino-pretty",
+        "test:scraper": "ts-node -r tsconfig-paths/register src/scripts/testScraper.ts"
     },
     "keywords": [
         "movies",

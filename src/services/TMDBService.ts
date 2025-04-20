@@ -117,7 +117,7 @@ export class TMDBService {
                 return null;
             }
 
-            logger.error(`Error fetching movie ${movieId}:`, error);
+            logger.error(error, `Error fetching movie ${movieId}`);
             throw error;
         }
     }

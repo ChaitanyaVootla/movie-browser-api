@@ -168,14 +168,14 @@ export class RatingsEnricher {
         // Process Rotten Tomatoes audience ratings
         if (scrapedRatings.rottenTomatoes?.audience) {
             const audience = scrapedRatings.rottenTomatoes.audience;
-            if (audience.score !== null || audience.ratingCount !== null) {
+            if (audience.score !== null || audience.ratingCount !== null || audience.consensus) {
                 ratingsToInsert.push({
                     content_type: contentType,
                     content_id: contentId,
                     source: 'rottentomatoes',
                     rating: audience.score,
                     rating_count: audience.ratingCount,
-                    consensus: null,
+                    consensus: audience.consensus || null,
                     rating_type: 'audience',
                     details: {
                         certified: audience.certified,
